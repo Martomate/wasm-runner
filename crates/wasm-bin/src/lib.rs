@@ -99,17 +99,213 @@ struct Locals {
     t: ValType,
 }
 
+trait SectionDecoder: Sized {
+    fn decode_section(bytes: &mut WasmBytes) -> Result<Self, String>;
+}
+
 #[derive(Debug, PartialEq, Eq)]
 pub enum Section {
-    Custom { name: String, data: Vec<u8> },
-    Type { functions: Vec<FuncType> },
-    Import { imports: Vec<ImportType> },
-    Function { type_ids: Vec<u32> },
-    Table { tables: Vec<TableType> },
-    Memory { memories: Vec<MemoryType> },
-    Global { globals: Vec<(GlobalType, Expr)> },
-    Export { exports: Vec<Export> },
-    Code { codes: Vec<Code> },
+    Custom(CustomSection),
+    Type(TypeSection),
+    Import(ImportSection),
+    Function(FunctionSection),
+    Table(TableSection),
+    Memory(MemorySection),
+    Global(GlobalSecion),
+    Export(ExportSection),
+    Code(CodeSection),
+}
+
+impl Section {
+    fn decode<S: SectionDecoder + Into<Section>>(bytes: &mut WasmBytes) -> Result<Section, String> {
+        Ok(S::decode_section(bytes)?.into())
+    }
+}
+
+impl From<CustomSection> for Section {
+    fn from(val: CustomSection) -> Self {
+        Section::Custom(val)
+    }
+}
+
+impl From<TypeSection> for Section {
+    fn from(val: TypeSection) -> Self {
+        Section::Type(val)
+    }
+}
+
+impl From<ImportSection> for Section {
+    fn from(val: ImportSection) -> Self {
+        Section::Import(val)
+    }
+}
+
+impl From<FunctionSection> for Section {
+    fn from(val: FunctionSection) -> Self {
+        Section::Function(val)
+    }
+}
+
+impl From<TableSection> for Section {
+    fn from(val: TableSection) -> Self {
+        Section::Table(val)
+    }
+}
+
+impl From<MemorySection> for Section {
+    fn from(val: MemorySection) -> Self {
+        Section::Memory(val)
+    }
+}
+
+impl From<GlobalSecion> for Section {
+    fn from(val: GlobalSecion) -> Self {
+        Section::Global(val)
+    }
+}
+
+impl From<ExportSection> for Section {
+    fn from(val: ExportSection) -> Self {
+        Section::Export(val)
+    }
+}
+
+impl From<CodeSection> for Section {
+    fn from(val: CodeSection) -> Self {
+        Section::Code(val)
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct CustomSection {
+    name: String, data: Vec<u8>
+}
+
+impl SectionDecoder for CustomSection {
+    fn decode_section(bytes: &mut WasmBytes) -> Result<Self, String> {
+        Ok(Self {
+            name: bytes.next_name()?,
+            data: bytes.0.to_owned(),
+        })
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct TypeSection {
+    functions: Vec<FuncType>
+}
+
+impl SectionDecoder for TypeSection {
+    fn decode_section(bytes: &mut WasmBytes) -> Result<Self, String> {
+        Ok(Self { functions: bytes.read_vec(|bytes| bytes.next_functype())? })
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct ImportSection {
+    imports: Vec<ImportType>
+}
+
+impl SectionDecoder for ImportSection {
+    fn decode_section(bytes: &mut WasmBytes) -> Result<Self, String> {
+        Ok(Self {
+            imports: bytes.read_vec(|bytes| {
+                let mod_name = bytes.next_name()?;
+                let name = bytes.next_name()?;
+                
+                let kind = bytes.next_byte();
+                let desc = match kind {
+                    0x00 => ImportDesc::TypeIdx(bytes.next_u32()),
+                    0x01 => ImportDesc::Table(bytes.next_tabletype()?),
+                    0x02 => ImportDesc::Memory(bytes.next_memtype()?),
+                    0x03 => ImportDesc::Global(bytes.next_globaltype()?),
+                    _ => return Err(format!("invalid importdesc kind: {}", kind)),
+                };
+
+                Ok(ImportType { mod_name, name, desc })
+            })?
+        })
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct FunctionSection {
+    type_ids: Vec<u32>
+}
+
+impl SectionDecoder for FunctionSection {
+    fn decode_section(bytes: &mut WasmBytes) -> Result<Self, String> {
+        Ok(Self {type_ids: bytes.read_vec(|bytes| Ok(bytes.next_u32()))?})
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct TableSection {
+    tables: Vec<TableType>
+}
+
+impl SectionDecoder for TableSection {
+    fn decode_section(bytes: &mut WasmBytes) -> Result<Self, String> {
+        Ok(Self { 
+            tables: bytes.read_vec(|bytes| bytes.next_tabletype())?,
+        })
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct MemorySection {
+    memories: Vec<MemoryType>
+}
+
+impl SectionDecoder for MemorySection {
+    fn decode_section(bytes: &mut WasmBytes) -> Result<Self, String> {
+        Ok(Self { 
+            memories: bytes.read_vec(|bytes| bytes.next_memtype())?,
+        })
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct GlobalSecion {
+    globals: Vec<(GlobalType, Expr)>
+}
+
+impl SectionDecoder for GlobalSecion {
+    fn decode_section(bytes: &mut WasmBytes) -> Result<Self, String> {
+        Ok(Self { 
+            globals: bytes.read_vec(|bytes| {
+                let global_type = bytes.next_globaltype()?;
+                let expr = bytes.next_expr()?;
+                Ok((global_type, expr))
+            })?,
+        })
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct ExportSection {
+    exports: Vec<Export>
+}
+
+impl SectionDecoder for ExportSection {
+    fn decode_section(bytes: &mut WasmBytes) -> Result<Self, String> {
+        Ok(Self { 
+            exports: bytes.read_vec(|bytes| bytes.next_export())?,
+        })
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct CodeSection {
+    codes: Vec<Code>
+}
+
+impl SectionDecoder for CodeSection {
+    fn decode_section(bytes: &mut WasmBytes) -> Result<Self, String> {
+        Ok(Self { 
+            codes: bytes.read_vec(|bytes| bytes.next_code())?,
+        })
+    }
 }
 
 struct WasmBytes<'a>(&'a [u8]);
@@ -314,77 +510,23 @@ pub fn decode_bytes(mut b: &[u8]) -> Result<Wasm, String> {
 
     for (id, bytes) in raw_sections.iter().cloned() {
         let mut bytes = WasmBytes(bytes);
-        match id {
-            0 => {
-                sections.push(Section::Custom {
-                    name: bytes.next_name()?,
-                    data: bytes.0.to_owned(),
-                });
-            }
-            1 => {
-                sections.push(Section::Type {
-                    functions: bytes.read_vec(|bytes| bytes.next_functype())?,
-                });
-            }
-            2 => {
-                let imports = bytes.read_vec(|bytes| {
-                    let mod_name = bytes.next_name()?;
-                    let name = bytes.next_name()?;
-                    
-                    let kind = bytes.next_byte();
-                    let desc = match kind {
-                        0x00 => ImportDesc::TypeIdx(bytes.next_u32()),
-                        0x01 => ImportDesc::Table(bytes.next_tabletype()?),
-                        0x02 => ImportDesc::Memory(bytes.next_memtype()?),
-                        0x03 => ImportDesc::Global(bytes.next_globaltype()?),
-                        _ => return Err(format!("invalid importdesc kind: {}", kind)),
-                    };
-
-                    Ok(ImportType { mod_name, name, desc })
-                })?;
-
-                sections.push(Section::Import { imports });
-            }
-            3 => {
-                sections.push(Section::Function {
-                    type_ids: bytes.read_vec(|bytes| Ok(bytes.next_u32()))?,
-                });
-            }
-            4 => {
-                sections.push(Section::Table { 
-                    tables: bytes.read_vec(|bytes| bytes.next_tabletype())?,
-                });
-            }
-            5 => {
-                sections.push(Section::Memory { 
-                    memories: bytes.read_vec(|bytes| bytes.next_memtype())?,
-                });
-            }
-            6 => {
-                sections.push(Section::Global { 
-                    globals: bytes.read_vec(|bytes| {
-                        let global_type = bytes.next_globaltype()?;
-                        let expr = bytes.next_expr()?;
-                        Ok((global_type, expr))
-                    })?,
-                });
-            }
-            7 => {
-                sections.push(Section::Export { 
-                    exports: bytes.read_vec(|bytes| bytes.next_export())?,
-                });
-            }
+        let section = match id {
+            0 => Section::decode::<CustomSection>(&mut bytes)?,
+            1 => Section::decode::<TypeSection>(&mut bytes)?,
+            2 => Section::decode::<ImportSection>(&mut bytes)?,
+            3 => Section::decode::<FunctionSection>(&mut bytes)?,
+            4 => Section::decode::<TableSection>(&mut bytes)?,
+            5 => Section::decode::<MemorySection>(&mut bytes)?,
+            6 => Section::decode::<GlobalSecion>(&mut bytes)?,
+            7 => Section::decode::<ExportSection>(&mut bytes)?,
             8 => todo!(),
             9 => todo!(),
-            10 => {
-                sections.push(Section::Code { 
-                    codes: bytes.read_vec(|bytes| bytes.next_code())?,
-                });
-            }
+            10 => Section::decode::<CodeSection>(&mut bytes)?,
             11 => todo!(),
             12 => todo!(),
             _ => return Err(format!("unknwon section id: {id}"))
         };
+        sections.push(section);
     }
 
     println!("\n");
