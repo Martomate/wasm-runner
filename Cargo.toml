@@ -4,5 +4,6 @@ members = [
     "crates/wasm-bin",
     "crates/wasm-text",
     "programs/add",
+    "programs/box",
     "programs/hello",
 ]

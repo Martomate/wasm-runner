@@ -1,3 +1,9 @@
+use instr::{Instr, MemArg};
+use section::*;
+
+mod instr;
+mod section;
+
 pub struct Wasm {}
 
 #[derive(Debug, PartialEq, Eq)]
@@ -19,13 +25,6 @@ enum ValType {
     Num(NumType),
     Vec,
     Ref(RefType),
-}
-
-#[derive(Debug, PartialEq, Eq)]
-enum Instr {
-    LocalGet(i32),
-    I32Const(i32),
-    I32Add,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -94,223 +93,147 @@ pub struct Code {
 }
 
 #[derive(Debug, PartialEq, Eq)]
+pub struct Data {
+    init: Vec<u8>,
+    mode: DataMode,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum DataMode {
+    Passive,
+    Active { memory: u32, offset: Expr },
+}
+
+#[derive(Debug, PartialEq, Eq)]
+struct Element {
+    t: RefType,
+    init: ElementInit,
+    mode: ElementMode,
+}
+
+impl<'a> WasmBytes<'a> {
+    fn next_elemkind(&mut self) -> Result<(), String> {
+        if self.next_byte() != 0 {
+            return Err("element did not have elementkind 0".into());
+        }
+        Ok(())
+    }
+
+    fn next_element(&mut self) -> Result<Element, String> {
+        let kind = self.next_u32();
+        let element = match kind {
+            0 => {
+                let e = self.next_expr()?;
+                let y = self.read_vec(|bytes| Ok(bytes.next_u32()))?;
+                Element {
+                    t: RefType::FuncRef,
+                    init: ElementInit::Implicit(y),
+                    mode: ElementMode::Active { table: 0, offset: e },
+                }
+            }
+            1 => {
+                self.next_elemkind()?;
+                let y = self.read_vec(|bytes| Ok(bytes.next_u32()))?;
+                Element {
+                    t: RefType::FuncRef,
+                    init: ElementInit::Implicit(y),
+                    mode: ElementMode::Passive,
+                }
+            }
+            2 => {
+                let x = self.next_u32();
+                let e = self.next_expr()?;
+                self.next_elemkind()?;
+                let y = self.read_vec(|bytes| Ok(bytes.next_u32()))?;
+                Element {
+                    t: RefType::FuncRef,
+                    init: ElementInit::Implicit(y),
+                    mode: ElementMode::Active { table: x, offset: e },
+                }
+            }
+            3 => {
+                self.next_elemkind()?;
+                let y = self.read_vec(|bytes| Ok(bytes.next_u32()))?;
+                Element {
+                    t: RefType::FuncRef,
+                    init: ElementInit::Implicit(y),
+                    mode: ElementMode::Declarative,
+                }
+            }
+            4 => {
+                let e = self.next_expr()?;
+                let y = self.read_vec(|bytes| bytes.next_expr())?;
+                Element {
+                    t: RefType::FuncRef,
+                    init: ElementInit::Explicit(y),
+                    mode: ElementMode::Active { table: 0, offset: e },
+                }
+            }
+            5 => {
+                let t = self.next_reftype()?;
+                let y = self.read_vec(|bytes| bytes.next_expr())?;
+                Element {
+                    t,
+                    init: ElementInit::Explicit(y),
+                    mode: ElementMode::Passive,
+                }
+            }
+            6 => {
+                let x = self.next_u32();
+                let e = self.next_expr()?;
+                let t = self.next_reftype()?;
+                let y = self.read_vec(|bytes| bytes.next_expr())?;
+                Element {
+                    t,
+                    init: ElementInit::Explicit(y),
+                    mode: ElementMode::Active { table: x, offset: e },
+                }
+            }
+            7 => {
+                let t = self.next_reftype()?;
+                let y = self.read_vec(|bytes| bytes.next_expr())?;
+                Element {
+                    t,
+                    init: ElementInit::Explicit(y),
+                    mode: ElementMode::Declarative,
+                }
+            }
+            _ => return Err(format!("unknown element kind: {}", kind)),
+        };
+        Ok(element)
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum ElementInit {
+    Implicit(Vec<u32>),
+    Explicit(Vec<Expr>),
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum ElementMode {
+    Passive,
+    Active { table: u32, offset: Expr },
+    Declarative,
+}
+
+#[derive(Debug, PartialEq, Eq)]
 struct Locals {
     n: u32,
     t: ValType,
 }
 
-trait SectionDecoder: Sized {
-    fn decode_section(bytes: &mut WasmBytes) -> Result<Self, String>;
-}
-
-#[derive(Debug, PartialEq, Eq)]
-pub enum Section {
-    Custom(CustomSection),
-    Type(TypeSection),
-    Import(ImportSection),
-    Function(FunctionSection),
-    Table(TableSection),
-    Memory(MemorySection),
-    Global(GlobalSecion),
-    Export(ExportSection),
-    Code(CodeSection),
-}
-
-impl Section {
-    fn decode<S: SectionDecoder + Into<Section>>(bytes: &mut WasmBytes) -> Result<Section, String> {
-        Ok(S::decode_section(bytes)?.into())
-    }
-}
-
-impl From<CustomSection> for Section {
-    fn from(val: CustomSection) -> Self {
-        Section::Custom(val)
-    }
-}
-
-impl From<TypeSection> for Section {
-    fn from(val: TypeSection) -> Self {
-        Section::Type(val)
-    }
-}
-
-impl From<ImportSection> for Section {
-    fn from(val: ImportSection) -> Self {
-        Section::Import(val)
-    }
-}
-
-impl From<FunctionSection> for Section {
-    fn from(val: FunctionSection) -> Self {
-        Section::Function(val)
-    }
-}
-
-impl From<TableSection> for Section {
-    fn from(val: TableSection) -> Self {
-        Section::Table(val)
-    }
-}
-
-impl From<MemorySection> for Section {
-    fn from(val: MemorySection) -> Self {
-        Section::Memory(val)
-    }
-}
-
-impl From<GlobalSecion> for Section {
-    fn from(val: GlobalSecion) -> Self {
-        Section::Global(val)
-    }
-}
-
-impl From<ExportSection> for Section {
-    fn from(val: ExportSection) -> Self {
-        Section::Export(val)
-    }
-}
-
-impl From<CodeSection> for Section {
-    fn from(val: CodeSection) -> Self {
-        Section::Code(val)
-    }
-}
-
-#[derive(Debug, PartialEq, Eq)]
-pub struct CustomSection {
-    name: String, data: Vec<u8>
-}
-
-impl SectionDecoder for CustomSection {
-    fn decode_section(bytes: &mut WasmBytes) -> Result<Self, String> {
-        Ok(Self {
-            name: bytes.next_name()?,
-            data: bytes.0.to_owned(),
-        })
-    }
-}
-
-#[derive(Debug, PartialEq, Eq)]
-pub struct TypeSection {
-    functions: Vec<FuncType>
-}
-
-impl SectionDecoder for TypeSection {
-    fn decode_section(bytes: &mut WasmBytes) -> Result<Self, String> {
-        Ok(Self { functions: bytes.read_vec(|bytes| bytes.next_functype())? })
-    }
-}
-
-#[derive(Debug, PartialEq, Eq)]
-pub struct ImportSection {
-    imports: Vec<ImportType>
-}
-
-impl SectionDecoder for ImportSection {
-    fn decode_section(bytes: &mut WasmBytes) -> Result<Self, String> {
-        Ok(Self {
-            imports: bytes.read_vec(|bytes| {
-                let mod_name = bytes.next_name()?;
-                let name = bytes.next_name()?;
-                
-                let kind = bytes.next_byte();
-                let desc = match kind {
-                    0x00 => ImportDesc::TypeIdx(bytes.next_u32()),
-                    0x01 => ImportDesc::Table(bytes.next_tabletype()?),
-                    0x02 => ImportDesc::Memory(bytes.next_memtype()?),
-                    0x03 => ImportDesc::Global(bytes.next_globaltype()?),
-                    _ => return Err(format!("invalid importdesc kind: {}", kind)),
-                };
-
-                Ok(ImportType { mod_name, name, desc })
-            })?
-        })
-    }
-}
-
-#[derive(Debug, PartialEq, Eq)]
-pub struct FunctionSection {
-    type_ids: Vec<u32>
-}
-
-impl SectionDecoder for FunctionSection {
-    fn decode_section(bytes: &mut WasmBytes) -> Result<Self, String> {
-        Ok(Self {type_ids: bytes.read_vec(|bytes| Ok(bytes.next_u32()))?})
-    }
-}
-
-#[derive(Debug, PartialEq, Eq)]
-pub struct TableSection {
-    tables: Vec<TableType>
-}
-
-impl SectionDecoder for TableSection {
-    fn decode_section(bytes: &mut WasmBytes) -> Result<Self, String> {
-        Ok(Self { 
-            tables: bytes.read_vec(|bytes| bytes.next_tabletype())?,
-        })
-    }
-}
-
-#[derive(Debug, PartialEq, Eq)]
-pub struct MemorySection {
-    memories: Vec<MemoryType>
-}
-
-impl SectionDecoder for MemorySection {
-    fn decode_section(bytes: &mut WasmBytes) -> Result<Self, String> {
-        Ok(Self { 
-            memories: bytes.read_vec(|bytes| bytes.next_memtype())?,
-        })
-    }
-}
-
-#[derive(Debug, PartialEq, Eq)]
-pub struct GlobalSecion {
-    globals: Vec<(GlobalType, Expr)>
-}
-
-impl SectionDecoder for GlobalSecion {
-    fn decode_section(bytes: &mut WasmBytes) -> Result<Self, String> {
-        Ok(Self { 
-            globals: bytes.read_vec(|bytes| {
-                let global_type = bytes.next_globaltype()?;
-                let expr = bytes.next_expr()?;
-                Ok((global_type, expr))
-            })?,
-        })
-    }
-}
-
-#[derive(Debug, PartialEq, Eq)]
-pub struct ExportSection {
-    exports: Vec<Export>
-}
-
-impl SectionDecoder for ExportSection {
-    fn decode_section(bytes: &mut WasmBytes) -> Result<Self, String> {
-        Ok(Self { 
-            exports: bytes.read_vec(|bytes| bytes.next_export())?,
-        })
-    }
-}
-
-#[derive(Debug, PartialEq, Eq)]
-pub struct CodeSection {
-    codes: Vec<Code>
-}
-
-impl SectionDecoder for CodeSection {
-    fn decode_section(bytes: &mut WasmBytes) -> Result<Self, String> {
-        Ok(Self { 
-            codes: bytes.read_vec(|bytes| bytes.next_code())?,
-        })
-    }
-}
-
 struct WasmBytes<'a>(&'a [u8]);
 
 impl<'a> WasmBytes<'a> {
+    pub fn assert_next_byte(&mut self, expected: u8) -> Result<(), String> {
+        let res = self.next_byte();
+        if res != expected {
+            return Err(format!("expected {:x}, found: {:x}", expected, res));
+        }
+        Ok(())
+    }
+    
     fn next_byte(&mut self) -> u8 {
         let res = self.0[0];
         self.0 = &self.0[1..];
@@ -324,12 +247,13 @@ impl<'a> WasmBytes<'a> {
     }
 
     fn next_u32(&mut self) -> u32 {
-        if self.0[0] & 0b_1000_0000 == 0 {
-            let res = self.0[0] as u32;
-            self.0 = &self.0[1..];
-            return res;
+        let b = self.next_byte();
+
+        if b & 0b_1000_0000 == 0 {
+            b as u32
+        } else {
+            ((b as u32) & !0b_1000_0000) | (self.next_u32() << 7)
         }
-        panic!("large u32 not supported yet");
     }
 
     fn next_i32(&mut self) -> i32 {
@@ -341,6 +265,18 @@ impl<'a> WasmBytes<'a> {
             (b as i32) - 0b_1000_0000
         } else {
             ((b as i32) & !0b_1000_0000) | (self.next_i32() << 7)
+        }
+    }
+
+    fn next_i64(&mut self) -> i64 {
+        let b = self.next_byte();
+
+        if b & 0b_1100_0000 == 0 {
+            b as i64
+        } else if b & 0b_1000_0000 == 0 {
+            (b as i64) - 0b_1000_0000
+        } else {
+            ((b as i64) & !0b_1000_0000) | (self.next_i64() << 7)
         }
     }
 
@@ -369,6 +305,15 @@ impl<'a> WasmBytes<'a> {
             0x70 => ValType::Ref(RefType::FuncRef),
             0x6F => ValType::Ref(RefType::ExternRef),
             _ => Err(format!("invalid valtype: {}", b))?,
+        };
+        Ok(res)
+    }
+
+    fn next_reftype(&mut self) -> Result<RefType, String> {
+        let res = match self.next_byte() {
+            0x70 => RefType::FuncRef,
+            0x6F => RefType::ExternRef,
+            b => Err(format!("invalid reftype: {}", b))?,
         };
         Ok(res)
     }
@@ -440,6 +385,28 @@ impl<'a> WasmBytes<'a> {
         Ok(Code { size, func: (locals, expr) })
     }
 
+    fn next_data(&mut self) -> Result<Data, String> {
+        let data = match self.next_u32() {
+            0 => {
+                let e = self.next_expr()?;
+                let b = self.read_vec(|bytes| Ok(bytes.next_byte()))?;
+                Data { init: b, mode: DataMode::Active { memory: 0, offset: e } }
+            }
+            1 => {
+                let b = self.read_vec(|bytes| Ok(bytes.next_byte()))?;
+                Data { init: b, mode: DataMode::Passive }
+            }
+            2 => {
+                let x = self.next_u32();
+                let e = self.next_expr()?;
+                let b = self.read_vec(|bytes| Ok(bytes.next_byte()))?;
+                Data { init: b, mode: DataMode::Active { memory: x, offset: e } }
+            }
+            b => return Err(format!("invalid data variant: {}", b)),
+        };
+        Ok(data)
+    }
+
     fn next_functype(&mut self) -> Result<FuncType, String> {
         if self.next_u32() != 0x60 {
             return Err("functype did not start with 0x60".into());
@@ -450,16 +417,10 @@ impl<'a> WasmBytes<'a> {
         Ok(FuncType { params, returns })
     }
 
-    fn next_instr(&mut self) -> Result<Instr, String> {
-        let opcode = self.next_byte();
-        let instr = match opcode {
-            0x20 => Instr::LocalGet(self.next_i32()),
-            0x41 => Instr::I32Const(self.next_i32()),
-            0x6A => Instr::I32Add,
-            // TODO: add the rest!
-            _ => return Err(format!("unknown opcode: 0x{:x}", opcode)),
-        };
-        Ok(instr)
+    fn next_memarg(&mut self) -> Result<MemArg, String> {
+        let align = self.next_u32();
+        let offset = self.next_u32();
+        Ok(MemArg{ align, offset })
     }
 
     fn next_expr(&mut self) -> Result<Expr, String> {
@@ -477,6 +438,20 @@ impl<'a> WasmBytes<'a> {
         let mut items = Vec::with_capacity(len);
 
         for _ in 0..len {
+            items.push(f(self)?);
+        }
+
+        Ok(items)
+    }
+
+    fn read_until<T>(&mut self, f: impl Fn(&mut Self) -> Result<T, String>, done: impl Fn(u8) -> bool) -> Result<Vec<T>, String> {
+        let mut items = Vec::new();
+
+        loop {
+            let b = self.0[0];
+            if done(b) {
+                break;
+            }
             items.push(f(self)?);
         }
 
@@ -520,9 +495,9 @@ pub fn decode_bytes(mut b: &[u8]) -> Result<Wasm, String> {
             6 => Section::decode::<GlobalSecion>(&mut bytes)?,
             7 => Section::decode::<ExportSection>(&mut bytes)?,
             8 => todo!(),
-            9 => todo!(),
+            9 => Section::decode::<ElementSection>(&mut bytes)?,
             10 => Section::decode::<CodeSection>(&mut bytes)?,
-            11 => todo!(),
+            11 => Section::decode::<DataSection>(&mut bytes)?,
             12 => todo!(),
             _ => return Err(format!("unknwon section id: {id}"))
         };
@@ -542,6 +517,25 @@ pub fn decode_bytes(mut b: &[u8]) -> Result<Wasm, String> {
 
 #[cfg(test)]
 mod tests {
+    mod next_u32 {
+        use crate::WasmBytes;
+
+        #[test]
+        fn small_positive() {
+            let mut bytes = WasmBytes(&[42, 0x7F]);
+            assert_eq!(bytes.next_u32(), 42);
+            assert_eq!(bytes.next_u32(), 0x7F);
+            assert!(bytes.is_empty());
+        }
+
+        #[test]
+        fn big_positive() {
+            let mut bytes = WasmBytes(&[0xE5, 0x8E, 0x26]);
+            assert_eq!(bytes.next_u32(), 624485);
+            assert!(bytes.is_empty());
+        }
+    }
+
     mod next_i32 {
         use crate::WasmBytes;
 
@@ -569,6 +563,13 @@ mod tests {
             
             let mut bytes = WasmBytes(&[0x80 | 0x4F, 0x80 | 0x0A, 42]);
             assert_eq!(bytes.next_i32(), (42 << 14) | (0x0A << 7) | 0x4F);
+            assert!(bytes.is_empty());
+        }
+
+        #[test]
+        fn big_negative() {
+            let mut bytes = WasmBytes(&[0xC0, 0xBB, 0x78]);
+            assert_eq!(bytes.next_i32(), -123456);
             assert!(bytes.is_empty());
         }
 
