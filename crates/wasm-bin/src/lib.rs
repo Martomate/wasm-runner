@@ -18,9 +18,9 @@ pub fn decode_bytes(mut b: &[u8]) -> Result<Wasm, String> {
     let mut b = WasmDecoder(b);
 
     while !b.is_empty() {
-        let section_id = b.next_byte();
-        let section_size = b.next_u32() as usize;
-        raw_sections.push((section_id, b.next_bytes(section_size)));
+        let section_id = b.read_byte();
+        let section_size = b.read_u32() as usize;
+        raw_sections.push((section_id, b.read_bytes(section_size)));
     }
 
     for (id, bytes) in raw_sections.iter() {

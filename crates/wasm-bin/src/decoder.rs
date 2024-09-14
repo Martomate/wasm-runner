@@ -1,8 +1,8 @@
 pub struct WasmDecoder<'a>(pub &'a [u8]);
 
 impl<'a> WasmDecoder<'a> {
-    pub fn assert_next_byte(&mut self, expected: u8) -> Result<(), String> {
-        let res = self.next_byte();
+    pub fn discard_byte(&mut self, expected: u8) -> Result<(), String> {
+        let res = self.read_byte();
         if res != expected {
             return Err(format!("expected {:x}, found: {:x}", expected, res));
         }
@@ -10,7 +10,7 @@ impl<'a> WasmDecoder<'a> {
     }
 
     pub fn read_vec<T>(&mut self, f: impl Fn(&mut Self) -> Result<T, String>) -> Result<Vec<T>, String> {
-        let len = self.next_byte() as usize;
+        let len = self.read_byte() as usize;
 
         let mut items = Vec::with_capacity(len);
 

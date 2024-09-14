@@ -154,31 +154,31 @@ pub enum Instr {
 }
 
 impl<'a> WasmDecoder<'a> {
-    pub fn next_expr(&mut self) -> Result<Expr, String> {
+    pub fn read_expr(&mut self) -> Result<Expr, String> {
         let mut instructions = Vec::new();
         while self.0[0] != 0x0B {
-            instructions.push(self.next_instr()?);
+            instructions.push(self.read_instr()?);
         }
-        self.next_byte(); // skip the 0x0B byte (end marker)
+        self.read_byte(); // skip the 0x0B byte (end marker)
         Ok(Expr(instructions))
     }
 
-    fn next_memarg(&mut self) -> Result<MemArg, String> {
-        let align = self.next_u32();
-        let offset = self.next_u32();
+    fn read_memarg(&mut self) -> Result<MemArg, String> {
+        let align = self.read_u32();
+        let offset = self.read_u32();
         Ok(MemArg{ align, offset })
     }
 
-    fn next_blocktype(&mut self) -> Result<BlockType, String> {
+    fn read_blocktype(&mut self) -> Result<BlockType, String> {
         if self.0[0] == 0x40 {
-            self.next_byte(); // consume the byte
+            self.read_byte(); // consume the byte
             return Ok(BlockType::Void);
         }
         WasmDecoder(self.0)
-            .next_val_type()
+            .read_val_type()
             .map(BlockType::ValType)
             .or_else(|_| {
-                let x = self.next_i64();
+                let x = self.read_i64();
                 println!("x: {}", x);
                 if x >= 0 {
                     Ok(BlockType::NewType(x as u64))
@@ -188,88 +188,88 @@ impl<'a> WasmDecoder<'a> {
             })
     }
 
-    pub fn next_instr(&mut self) -> Result<Instr, String> {
-        let opcode = self.next_byte();
+    pub fn read_instr(&mut self) -> Result<Instr, String> {
+        let opcode = self.read_byte();
         let instr = match opcode {
             0x00 => Instr::Unreachable,
             0x01 => Instr::Nop,
             0x02 => {
-                let bt = self.next_blocktype()?;
-                let ins = self.read_until(|bytes| bytes.next_instr(), |b| b == 0x0B)?;
-                self.assert_next_byte(0x0B)?;
+                let bt = self.read_blocktype()?;
+                let ins = self.read_until(|bytes| bytes.read_instr(), |b| b == 0x0B)?;
+                self.discard_byte(0x0B)?;
                 Instr::Block(bt, ins)
             }
             0x03 => {
-                let bt = self.next_blocktype()?;
-                let ins = self.read_until(|bytes| bytes.next_instr(), |b| b == 0x0B)?;
-                self.assert_next_byte(0x0B)?;
+                let bt = self.read_blocktype()?;
+                let ins = self.read_until(|bytes| bytes.read_instr(), |b| b == 0x0B)?;
+                self.discard_byte(0x0B)?;
                 Instr::Loop(bt, ins)
             }
             0x04 => {
-                let bt = self.next_blocktype()?;
+                let bt = self.read_blocktype()?;
                 let ins =
-                    self.read_until(|bytes| bytes.next_instr(), |b| b == 0x05 || b == 0x0B)?;
-                match self.next_byte() {
+                    self.read_until(|bytes| bytes.read_instr(), |b| b == 0x05 || b == 0x0B)?;
+                match self.read_byte() {
                     0x05 => {
-                        let ins2 = self.read_until(|bytes| bytes.next_instr(), |b| b == 0x0B)?;
-                        self.assert_next_byte(0x0B)?;
+                        let ins2 = self.read_until(|bytes| bytes.read_instr(), |b| b == 0x0B)?;
+                        self.discard_byte(0x0B)?;
                         Instr::IfElse(bt, ins, Some(ins2))
                     }
                     0x08 => Instr::IfElse(bt, ins, None),
                     b => return Err(format!("invalid if-else separator byte: {}", b)),
                 }
             }
-            0x0C => Instr::Break(self.next_u32()),
-            0x0D => Instr::BreakIf(self.next_u32()),
-            0x0E => Instr::BreakTable(self.read_vec(|bytes| Ok(bytes.next_u32()))?, self.next_u32()),
+            0x0C => Instr::Break(self.read_u32()),
+            0x0D => Instr::BreakIf(self.read_u32()),
+            0x0E => Instr::BreakTable(self.read_vec(|bytes| Ok(bytes.read_u32()))?, self.read_u32()),
             0x0F => Instr::Return,
-            0x10 => Instr::Call(self.next_u32()),
-            0x11 => Instr::CallIndirect(self.next_u32(), self.next_u32()),
+            0x10 => Instr::Call(self.read_u32()),
+            0x11 => Instr::CallIndirect(self.read_u32(), self.read_u32()),
 
             0x1A => Instr::Drop,
             0x1B => Instr::Select,
 
-            0x20 => Instr::LocalGet(self.next_u32()),
-            0x21 => Instr::LocalSet(self.next_u32()),
-            0x22 => Instr::LocalTee(self.next_u32()),
-            0x23 => Instr::GlobalGet(self.next_u32()),
-            0x24 => Instr::GlobalSet(self.next_u32()),
+            0x20 => Instr::LocalGet(self.read_u32()),
+            0x21 => Instr::LocalSet(self.read_u32()),
+            0x22 => Instr::LocalTee(self.read_u32()),
+            0x23 => Instr::GlobalGet(self.read_u32()),
+            0x24 => Instr::GlobalSet(self.read_u32()),
             
-            0x28 => Instr::I32Load(self.next_memarg()?),
-            0x29 => Instr::I64Load(self.next_memarg()?),
-            0x2A => Instr::F32Load(self.next_memarg()?),
-            0x2B => Instr::F64Load(self.next_memarg()?),
-            0x2C => Instr::I32Load8S(self.next_memarg()?),
-            0x2D => Instr::I32Load8U(self.next_memarg()?),
-            0x2E => Instr::I32Load16S(self.next_memarg()?),
-            0x2F => Instr::I32Load16U(self.next_memarg()?),
-            0x30 => Instr::I64Load8S(self.next_memarg()?),
-            0x31 => Instr::I64Load8U(self.next_memarg()?),
-            0x32 => Instr::I64Load16S(self.next_memarg()?),
-            0x33 => Instr::I64Load16U(self.next_memarg()?),
-            0x34 => Instr::I64Load32S(self.next_memarg()?),
-            0x35 => Instr::I64Load32U(self.next_memarg()?),
-            0x36 => Instr::I32Store(self.next_memarg()?),
-            0x37 => Instr::I64Store(self.next_memarg()?),
-            0x38 => Instr::F32Store(self.next_memarg()?),
-            0x39 => Instr::F64Store(self.next_memarg()?),
-            0x3A => Instr::I32Store8(self.next_memarg()?),
-            0x3B => Instr::I32Store16(self.next_memarg()?),
-            0x3C => Instr::I64Store8(self.next_memarg()?),
-            0x3D => Instr::I64Store16(self.next_memarg()?),
-            0x3E => Instr::I64Store32(self.next_memarg()?),
+            0x28 => Instr::I32Load(self.read_memarg()?),
+            0x29 => Instr::I64Load(self.read_memarg()?),
+            0x2A => Instr::F32Load(self.read_memarg()?),
+            0x2B => Instr::F64Load(self.read_memarg()?),
+            0x2C => Instr::I32Load8S(self.read_memarg()?),
+            0x2D => Instr::I32Load8U(self.read_memarg()?),
+            0x2E => Instr::I32Load16S(self.read_memarg()?),
+            0x2F => Instr::I32Load16U(self.read_memarg()?),
+            0x30 => Instr::I64Load8S(self.read_memarg()?),
+            0x31 => Instr::I64Load8U(self.read_memarg()?),
+            0x32 => Instr::I64Load16S(self.read_memarg()?),
+            0x33 => Instr::I64Load16U(self.read_memarg()?),
+            0x34 => Instr::I64Load32S(self.read_memarg()?),
+            0x35 => Instr::I64Load32U(self.read_memarg()?),
+            0x36 => Instr::I32Store(self.read_memarg()?),
+            0x37 => Instr::I64Store(self.read_memarg()?),
+            0x38 => Instr::F32Store(self.read_memarg()?),
+            0x39 => Instr::F64Store(self.read_memarg()?),
+            0x3A => Instr::I32Store8(self.read_memarg()?),
+            0x3B => Instr::I32Store16(self.read_memarg()?),
+            0x3C => Instr::I64Store8(self.read_memarg()?),
+            0x3D => Instr::I64Store16(self.read_memarg()?),
+            0x3E => Instr::I64Store32(self.read_memarg()?),
 
             0x3F => {
-                self.assert_next_byte(0x00)?;
+                self.discard_byte(0x00)?;
                 Instr::MemorySize
             }
             0x40 => {
-                self.assert_next_byte(0x00)?;
+                self.discard_byte(0x00)?;
                 Instr::MemoryGrow
             }
 
-            0x41 => Instr::I32Const(self.next_i32()),
-            0x42 => Instr::I64Const(self.next_i64()),
+            0x41 => Instr::I32Const(self.read_i32()),
+            0x42 => Instr::I64Const(self.read_i64()),
 
             0x45 => Instr::I32Eqz,
             0x46 => Instr::I32Eq,
@@ -351,23 +351,23 @@ impl<'a> WasmDecoder<'a> {
             0xAD => Instr::I64ExtendI32U,
 
             0xFC => {
-                match self.next_u32() {
+                match self.read_u32() {
                     8 => {
-                        let x = self.next_u32();
-                        self.assert_next_byte(0x00)?;
+                        let x = self.read_u32();
+                        self.discard_byte(0x00)?;
                         Instr::MemoryInit(x)
                     }
                     9 => {
-                        let x = self.next_u32();
+                        let x = self.read_u32();
                         Instr::MemoryDrop(x)
                     }
                     10 => {
-                        self.assert_next_byte(0x00)?;
-                        self.assert_next_byte(0x00)?;
+                        self.discard_byte(0x00)?;
+                        self.discard_byte(0x00)?;
                         Instr::MemoryCopy
                     }
                     11 => {
-                        self.assert_next_byte(0x00)?;
+                        self.discard_byte(0x00)?;
                         Instr::MemoryFill
                     }
                     b => return Err(format!("unsupported byte after 0xFC: 0x{:x}", b)),

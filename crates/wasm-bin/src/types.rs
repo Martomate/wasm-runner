@@ -55,27 +55,27 @@ pub struct GlobalType {
 }
 
 impl<'a> WasmDecoder<'a> {
-    pub fn next_functype(&mut self) -> Result<FuncType, String> {
-        if self.next_u32() != 0x60 {
+    pub fn read_functype(&mut self) -> Result<FuncType, String> {
+        if self.read_u32() != 0x60 {
             return Err("functype did not start with 0x60".into());
         }
-        let params = self.next_result_type()?;
-        let returns = self.next_result_type()?;
+        let params = self.read_result_type()?;
+        let returns = self.read_result_type()?;
 
         Ok(FuncType { params, returns })
     }
 
-    pub fn next_result_type(&mut self) -> Result<ResultType, String> {
-        let num_vals = self.next_u32() as usize;
+    pub fn read_result_type(&mut self) -> Result<ResultType, String> {
+        let num_vals = self.read_u32() as usize;
         let mut val_types = Vec::with_capacity(num_vals);
         for _ in 0..num_vals {
-            val_types.push(self.next_val_type()?);
+            val_types.push(self.read_val_type()?);
         }
         Ok(ResultType(val_types))
     }
 
-    pub fn next_val_type(&mut self) -> Result<ValType, String> {
-        let b = self.next_byte();
+    pub fn read_val_type(&mut self) -> Result<ValType, String> {
+        let b = self.read_byte();
         let res = match b {
             0x7F => ValType::Num(NumType::I32),
             0x7E => ValType::Num(NumType::I64),
@@ -89,8 +89,8 @@ impl<'a> WasmDecoder<'a> {
         Ok(res)
     }
 
-    pub fn next_reftype(&mut self) -> Result<RefType, String> {
-        let res = match self.next_byte() {
+    pub fn read_reftype(&mut self) -> Result<RefType, String> {
+        let res = match self.read_byte() {
             0x70 => RefType::FuncRef,
             0x6F => RefType::ExternRef,
             b => Err(format!("invalid reftype: {}", b))?,
@@ -98,41 +98,41 @@ impl<'a> WasmDecoder<'a> {
         Ok(res)
     }
 
-    pub fn next_limits(&mut self) -> Result<Limits, String> {
-        let limit_kind = self.next_byte();
+    pub fn read_limits(&mut self) -> Result<Limits, String> {
+        let limit_kind = self.read_byte();
         let limits = match limit_kind {
             0x00 => {
-                Limits::Min(self.next_u32())
+                Limits::Min(self.read_u32())
             },
             0x01 => {
-                Limits::MinMax(self.next_u32(), self.next_u32())
+                Limits::MinMax(self.read_u32(), self.read_u32())
             },
             _ => return Err(format!("invalid limit kind: {}", limit_kind)),
         };
         Ok(limits)
     }
 
-    pub fn next_tabletype(&mut self) -> Result<TableType, String> {
-        let b = self.next_byte();
+    pub fn read_tabletype(&mut self) -> Result<TableType, String> {
+        let b = self.read_byte();
         let ref_type = match b {
             0x70 => RefType::FuncRef,
             0x6F => RefType::ExternRef,
             _ => return Err(format!("invalid reftype: {}", b)),
         };
 
-        let limits = self.next_limits()?;
+        let limits = self.read_limits()?;
 
         Ok(TableType(ref_type, limits))
     }
 
-    pub fn next_memtype(&mut self) -> Result<MemoryType, String> {
-        let limits = self.next_limits()?;
+    pub fn read_memtype(&mut self) -> Result<MemoryType, String> {
+        let limits = self.read_limits()?;
         Ok(MemoryType(limits))
     }
 
-    pub fn next_globaltype(&mut self) -> Result<GlobalType, String> {
-        let val_type = self.next_val_type()?;
-        let mutable = match self.next_byte() {
+    pub fn read_globaltype(&mut self) -> Result<GlobalType, String> {
+        let val_type = self.read_val_type()?;
+        let mutable = match self.read_byte() {
             0x00 => false,
             0x01 => true,
             b => return Err(format!("invalid mut byte in globaltype: {}", b)),
