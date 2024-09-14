@@ -1,4 +1,8 @@
-use crate::{ValType, WasmBytes};
+use crate::decoder::WasmDecoder;
+use crate::types::ValType;
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct Expr(Vec<Instr>);
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct MemArg {
@@ -149,13 +153,28 @@ pub enum Instr {
     MemoryFill,
 }
 
-impl<'a> WasmBytes<'a> {
+impl<'a> WasmDecoder<'a> {
+    pub fn next_expr(&mut self) -> Result<Expr, String> {
+        let mut instructions = Vec::new();
+        while self.0[0] != 0x0B {
+            instructions.push(self.next_instr()?);
+        }
+        self.next_byte(); // skip the 0x0B byte (end marker)
+        Ok(Expr(instructions))
+    }
+
+    fn next_memarg(&mut self) -> Result<MemArg, String> {
+        let align = self.next_u32();
+        let offset = self.next_u32();
+        Ok(MemArg{ align, offset })
+    }
+
     fn next_blocktype(&mut self) -> Result<BlockType, String> {
         if self.0[0] == 0x40 {
             self.next_byte(); // consume the byte
             return Ok(BlockType::Void);
         }
-        WasmBytes(self.0)
+        WasmDecoder(self.0)
             .next_val_type()
             .map(BlockType::ValType)
             .or_else(|_| {
