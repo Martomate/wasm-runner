@@ -1,6 +1,8 @@
 use crate::decoder::WasmDecoder;
-use crate::{instr::Expr, types::{FuncType, GlobalType, MemoryType, RefType, TableType, ValType}};
-
+use crate::{
+    instr::Expr,
+    types::{FuncType, GlobalType, MemoryType, RefType, TableType, ValType},
+};
 
 #[derive(Debug, PartialEq, Eq)]
 enum ImportDesc {
@@ -92,7 +94,10 @@ impl<'a> WasmDecoder<'a> {
                 Element {
                     t: RefType::FuncRef,
                     init: ElementInit::Implicit(y),
-                    mode: ElementMode::Active { table: 0, offset: e },
+                    mode: ElementMode::Active {
+                        table: 0,
+                        offset: e,
+                    },
                 }
             }
             1 => {
@@ -112,7 +117,10 @@ impl<'a> WasmDecoder<'a> {
                 Element {
                     t: RefType::FuncRef,
                     init: ElementInit::Implicit(y),
-                    mode: ElementMode::Active { table: x, offset: e },
+                    mode: ElementMode::Active {
+                        table: x,
+                        offset: e,
+                    },
                 }
             }
             3 => {
@@ -130,7 +138,10 @@ impl<'a> WasmDecoder<'a> {
                 Element {
                     t: RefType::FuncRef,
                     init: ElementInit::Explicit(y),
-                    mode: ElementMode::Active { table: 0, offset: e },
+                    mode: ElementMode::Active {
+                        table: 0,
+                        offset: e,
+                    },
                 }
             }
             5 => {
@@ -150,7 +161,10 @@ impl<'a> WasmDecoder<'a> {
                 Element {
                     t,
                     init: ElementInit::Explicit(y),
-                    mode: ElementMode::Active { table: x, offset: e },
+                    mode: ElementMode::Active {
+                        table: x,
+                        offset: e,
+                    },
                 }
             }
             7 => {
@@ -189,7 +203,10 @@ impl<'a> WasmDecoder<'a> {
         let size = self.read_u32();
         let locals = self.read_vec(Self::read_locals)?;
         let expr = self.read_expr()?;
-        Ok(Code { size, func: (locals, expr) })
+        Ok(Code {
+            size,
+            func: (locals, expr),
+        })
     }
 
     fn read_data(&mut self) -> Result<Data, String> {
@@ -197,23 +214,57 @@ impl<'a> WasmDecoder<'a> {
             0 => {
                 let e = self.read_expr()?;
                 let b = self.read_vec(|bytes| Ok(bytes.read_byte()))?;
-                Data { init: b, mode: DataMode::Active { memory: 0, offset: e } }
+                Data {
+                    init: b,
+                    mode: DataMode::Active {
+                        memory: 0,
+                        offset: e,
+                    },
+                }
             }
             1 => {
                 let b = self.read_vec(|bytes| Ok(bytes.read_byte()))?;
-                Data { init: b, mode: DataMode::Passive }
+                Data {
+                    init: b,
+                    mode: DataMode::Passive,
+                }
             }
             2 => {
                 let x = self.read_u32();
                 let e = self.read_expr()?;
                 let b = self.read_vec(|bytes| Ok(bytes.read_byte()))?;
-                Data { init: b, mode: DataMode::Active { memory: x, offset: e } }
+                Data {
+                    init: b,
+                    mode: DataMode::Active {
+                        memory: x,
+                        offset: e,
+                    },
+                }
             }
             b => return Err(format!("invalid data variant: {}", b)),
         };
         Ok(data)
     }
 
+    fn read_import(&mut self) -> Result<ImportType, String> {
+        let mod_name = self.read_name()?;
+        let name = self.read_name()?;
+
+        let kind = self.read_byte();
+        let desc = match kind {
+            0x00 => ImportDesc::TypeIdx(self.read_u32()),
+            0x01 => ImportDesc::Table(self.read_tabletype()?),
+            0x02 => ImportDesc::Memory(self.read_memtype()?),
+            0x03 => ImportDesc::Global(self.read_globaltype()?),
+            _ => return Err(format!("invalid importdesc kind: {}", kind)),
+        };
+
+        Ok(ImportType {
+            mod_name,
+            name,
+            desc,
+        })
+    }
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -247,7 +298,7 @@ impl Section {
             10 => CodeSection::decode_section(bytes).map(Section::Code)?,
             11 => DataSection::decode_section(bytes).map(Section::Data)?,
             12 => todo!(),
-            _ => return Err(format!("unknwon section id: {id}"))
+            _ => return Err(format!("unknwon section id: {id}")),
         };
         Ok(section)
     }
@@ -259,7 +310,8 @@ pub trait SectionDecoder: Sized {
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct CustomSection {
-    name: String, data: Vec<u8>
+    name: String,
+    data: Vec<u8>,
 }
 
 impl SectionDecoder for CustomSection {
@@ -273,61 +325,51 @@ impl SectionDecoder for CustomSection {
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct TypeSection {
-    functions: Vec<FuncType>
+    functions: Vec<FuncType>,
 }
 
 impl SectionDecoder for TypeSection {
     fn decode_section(bytes: &mut WasmDecoder) -> Result<Self, String> {
-        Ok(Self { functions: bytes.read_vec(|bytes| bytes.read_functype())? })
+        Ok(Self {
+            functions: bytes.read_vec(|bytes| bytes.read_functype())?,
+        })
     }
 }
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct ImportSection {
-    imports: Vec<ImportType>
+    imports: Vec<ImportType>,
 }
 
 impl SectionDecoder for ImportSection {
     fn decode_section(bytes: &mut WasmDecoder) -> Result<Self, String> {
         Ok(Self {
-            imports: bytes.read_vec(|bytes| {
-                let mod_name = bytes.read_name()?;
-                let name = bytes.read_name()?;
-                
-                let kind = bytes.read_byte();
-                let desc = match kind {
-                    0x00 => ImportDesc::TypeIdx(bytes.read_u32()),
-                    0x01 => ImportDesc::Table(bytes.read_tabletype()?),
-                    0x02 => ImportDesc::Memory(bytes.read_memtype()?),
-                    0x03 => ImportDesc::Global(bytes.read_globaltype()?),
-                    _ => return Err(format!("invalid importdesc kind: {}", kind)),
-                };
-
-                Ok(ImportType { mod_name, name, desc })
-            })?
+            imports: bytes.read_vec(|bytes| bytes.read_import())?,
         })
     }
 }
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct FunctionSection {
-    type_ids: Vec<u32>
+    type_ids: Vec<u32>,
 }
 
 impl SectionDecoder for FunctionSection {
     fn decode_section(bytes: &mut WasmDecoder) -> Result<Self, String> {
-        Ok(Self {type_ids: bytes.read_vec(|bytes| Ok(bytes.read_u32()))?})
+        Ok(Self {
+            type_ids: bytes.read_vec(|bytes| Ok(bytes.read_u32()))?,
+        })
     }
 }
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct TableSection {
-    tables: Vec<TableType>
+    tables: Vec<TableType>,
 }
 
 impl SectionDecoder for TableSection {
     fn decode_section(bytes: &mut WasmDecoder) -> Result<Self, String> {
-        Ok(Self { 
+        Ok(Self {
             tables: bytes.read_vec(|bytes| bytes.read_tabletype())?,
         })
     }
@@ -335,12 +377,12 @@ impl SectionDecoder for TableSection {
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct MemorySection {
-    memories: Vec<MemoryType>
+    memories: Vec<MemoryType>,
 }
 
 impl SectionDecoder for MemorySection {
     fn decode_section(bytes: &mut WasmDecoder) -> Result<Self, String> {
-        Ok(Self { 
+        Ok(Self {
             memories: bytes.read_vec(|bytes| bytes.read_memtype())?,
         })
     }
@@ -348,12 +390,12 @@ impl SectionDecoder for MemorySection {
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct GlobalSecion {
-    globals: Vec<(GlobalType, Expr)>
+    globals: Vec<(GlobalType, Expr)>,
 }
 
 impl SectionDecoder for GlobalSecion {
     fn decode_section(bytes: &mut WasmDecoder) -> Result<Self, String> {
-        Ok(Self { 
+        Ok(Self {
             globals: bytes.read_vec(|bytes| {
                 let global_type = bytes.read_globaltype()?;
                 let expr = bytes.read_expr()?;
@@ -365,12 +407,12 @@ impl SectionDecoder for GlobalSecion {
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct ExportSection {
-    exports: Vec<Export>
+    exports: Vec<Export>,
 }
 
 impl SectionDecoder for ExportSection {
     fn decode_section(bytes: &mut WasmDecoder) -> Result<Self, String> {
-        Ok(Self { 
+        Ok(Self {
             exports: bytes.read_vec(|bytes| bytes.read_export())?,
         })
     }
@@ -378,12 +420,12 @@ impl SectionDecoder for ExportSection {
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct ElementSection {
-    elements: Vec<Element>
+    elements: Vec<Element>,
 }
 
 impl SectionDecoder for ElementSection {
     fn decode_section(bytes: &mut WasmDecoder) -> Result<Self, String> {
-        Ok(Self { 
+        Ok(Self {
             elements: bytes.read_vec(|bytes| bytes.read_element())?,
         })
     }
@@ -391,12 +433,12 @@ impl SectionDecoder for ElementSection {
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct CodeSection {
-    codes: Vec<Code>
+    codes: Vec<Code>,
 }
 
 impl SectionDecoder for CodeSection {
     fn decode_section(bytes: &mut WasmDecoder) -> Result<Self, String> {
-        Ok(Self { 
+        Ok(Self {
             codes: bytes.read_vec(|bytes| bytes.read_code())?,
         })
     }
@@ -404,12 +446,12 @@ impl SectionDecoder for CodeSection {
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct DataSection {
-    datas: Vec<Data>
+    datas: Vec<Data>,
 }
 
 impl SectionDecoder for DataSection {
     fn decode_section(bytes: &mut WasmDecoder) -> Result<Self, String> {
-        Ok(Self { 
+        Ok(Self {
             datas: bytes.read_vec(|bytes| bytes.read_data())?,
         })
     }

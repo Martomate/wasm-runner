@@ -10,8 +10,12 @@ mod values;
 pub struct Wasm {}
 
 pub fn decode_bytes(mut b: &[u8]) -> Result<Wasm, String> {
-    b = b.strip_prefix(&[0x00, 0x61, 0x73, 0x6d]).ok_or("missing magic bytes")?;
-    b = b.strip_prefix(&[0x01, 0x00, 0x00, 0x00]).ok_or("missing version number")?;
+    b = b
+        .strip_prefix(&[0x00, 0x61, 0x73, 0x6d])
+        .ok_or("missing magic bytes")?;
+    b = b
+        .strip_prefix(&[0x01, 0x00, 0x00, 0x00])
+        .ok_or("missing version number")?;
 
     let mut raw_sections = Vec::new();
 
@@ -43,5 +47,5 @@ pub fn decode_bytes(mut b: &[u8]) -> Result<Wasm, String> {
 
     println!("\n");
 
-    Ok(Wasm {  })
+    Ok(Wasm {})
 }

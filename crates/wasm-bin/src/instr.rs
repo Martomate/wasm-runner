@@ -166,7 +166,7 @@ impl<'a> WasmDecoder<'a> {
     fn read_memarg(&mut self) -> Result<MemArg, String> {
         let align = self.read_u32();
         let offset = self.read_u32();
-        Ok(MemArg{ align, offset })
+        Ok(MemArg { align, offset })
     }
 
     fn read_blocktype(&mut self) -> Result<BlockType, String> {
@@ -221,7 +221,10 @@ impl<'a> WasmDecoder<'a> {
             }
             0x0C => Instr::Break(self.read_u32()),
             0x0D => Instr::BreakIf(self.read_u32()),
-            0x0E => Instr::BreakTable(self.read_vec(|bytes| Ok(bytes.read_u32()))?, self.read_u32()),
+            0x0E => Instr::BreakTable(
+                self.read_vec(|bytes| Ok(bytes.read_u32()))?,
+                self.read_u32(),
+            ),
             0x0F => Instr::Return,
             0x10 => Instr::Call(self.read_u32()),
             0x11 => Instr::CallIndirect(self.read_u32(), self.read_u32()),
@@ -234,7 +237,7 @@ impl<'a> WasmDecoder<'a> {
             0x22 => Instr::LocalTee(self.read_u32()),
             0x23 => Instr::GlobalGet(self.read_u32()),
             0x24 => Instr::GlobalSet(self.read_u32()),
-            
+
             0x28 => Instr::I32Load(self.read_memarg()?),
             0x29 => Instr::I64Load(self.read_memarg()?),
             0x2A => Instr::F32Load(self.read_memarg()?),
@@ -350,29 +353,27 @@ impl<'a> WasmDecoder<'a> {
             0xA7 => Instr::I32WrapI64,
             0xAD => Instr::I64ExtendI32U,
 
-            0xFC => {
-                match self.read_u32() {
-                    8 => {
-                        let x = self.read_u32();
-                        self.discard_byte(0x00)?;
-                        Instr::MemoryInit(x)
-                    }
-                    9 => {
-                        let x = self.read_u32();
-                        Instr::MemoryDrop(x)
-                    }
-                    10 => {
-                        self.discard_byte(0x00)?;
-                        self.discard_byte(0x00)?;
-                        Instr::MemoryCopy
-                    }
-                    11 => {
-                        self.discard_byte(0x00)?;
-                        Instr::MemoryFill
-                    }
-                    b => return Err(format!("unsupported byte after 0xFC: 0x{:x}", b)),
+            0xFC => match self.read_u32() {
+                8 => {
+                    let x = self.read_u32();
+                    self.discard_byte(0x00)?;
+                    Instr::MemoryInit(x)
                 }
-            }
+                9 => {
+                    let x = self.read_u32();
+                    Instr::MemoryDrop(x)
+                }
+                10 => {
+                    self.discard_byte(0x00)?;
+                    self.discard_byte(0x00)?;
+                    Instr::MemoryCopy
+                }
+                11 => {
+                    self.discard_byte(0x00)?;
+                    Instr::MemoryFill
+                }
+                b => return Err(format!("unsupported byte after 0xFC: 0x{:x}", b)),
+            },
 
             // TODO: add the rest!
             _ => return Err(format!("unknown opcode: 0x{:x}", opcode)),

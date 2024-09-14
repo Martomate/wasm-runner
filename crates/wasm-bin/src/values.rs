@@ -1,13 +1,12 @@
 use crate::decoder::WasmDecoder;
 
-
 impl<'a> WasmDecoder<'a> {
     pub fn read_byte(&mut self) -> u8 {
         let res = self.0[0];
         self.0 = &self.0[1..];
         res
     }
-    
+
     pub fn read_bytes(&mut self, count: usize) -> &'a [u8] {
         let res = &self.0[..count];
         self.0 = &self.0[count..];
@@ -99,7 +98,7 @@ mod tests {
             let mut bytes = WasmDecoder(&[0x80, 42]);
             assert_eq!(bytes.read_i32(), 42 << 7);
             assert!(bytes.is_empty());
-            
+
             let mut bytes = WasmDecoder(&[0x80 | 0x4F, 0x80 | 0x0A, 42]);
             assert_eq!(bytes.read_i32(), (42 << 14) | (0x0A << 7) | 0x4F);
             assert!(bytes.is_empty());

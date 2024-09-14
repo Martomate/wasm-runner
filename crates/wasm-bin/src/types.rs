@@ -1,6 +1,5 @@
 use crate::decoder::WasmDecoder;
 
-
 #[derive(Debug, PartialEq, Eq)]
 pub enum NumType {
     I32,
@@ -101,12 +100,8 @@ impl<'a> WasmDecoder<'a> {
     pub fn read_limits(&mut self) -> Result<Limits, String> {
         let limit_kind = self.read_byte();
         let limits = match limit_kind {
-            0x00 => {
-                Limits::Min(self.read_u32())
-            },
-            0x01 => {
-                Limits::MinMax(self.read_u32(), self.read_u32())
-            },
+            0x00 => Limits::Min(self.read_u32()),
+            0x01 => Limits::MinMax(self.read_u32(), self.read_u32()),
             _ => return Err(format!("invalid limit kind: {}", limit_kind)),
         };
         Ok(limits)
@@ -137,6 +132,9 @@ impl<'a> WasmDecoder<'a> {
             0x01 => true,
             b => return Err(format!("invalid mut byte in globaltype: {}", b)),
         };
-        Ok(GlobalType { t: val_type, mutable })
+        Ok(GlobalType {
+            t: val_type,
+            mutable,
+        })
     }
 }
