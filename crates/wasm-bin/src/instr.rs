@@ -156,7 +156,7 @@ pub enum Instr {
 impl<'a> WasmDecoder<'a> {
     pub fn read_expr(&mut self) -> Result<Expr, String> {
         let mut instructions = Vec::new();
-        while self.0[0] != 0x0B {
+        while self.peek_byte() != 0x0B {
             instructions.push(self.read_instr()?);
         }
         self.read_byte(); // skip the 0x0B byte (end marker)
@@ -170,12 +170,11 @@ impl<'a> WasmDecoder<'a> {
     }
 
     fn read_blocktype(&mut self) -> Result<BlockType, String> {
-        if self.0[0] == 0x40 {
+        if self.peek_byte() == 0x40 {
             self.read_byte(); // consume the byte
             return Ok(BlockType::Void);
         }
-        WasmDecoder(self.0)
-            .read_val_type()
+        self.attempt(|bytes| bytes.read_val_type())
             .map(BlockType::ValType)
             .or_else(|_| {
                 let x = self.read_i64();

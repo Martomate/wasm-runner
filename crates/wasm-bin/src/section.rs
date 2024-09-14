@@ -318,7 +318,7 @@ impl SectionDecoder for CustomSection {
     fn decode_section(bytes: &mut WasmDecoder) -> Result<Self, String> {
         Ok(Self {
             name: bytes.read_name()?,
-            data: bytes.0.to_owned(),
+            data: bytes.read_all_bytes().to_owned(),
         })
     }
 }

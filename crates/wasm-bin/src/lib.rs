@@ -19,7 +19,7 @@ pub fn decode_bytes(mut b: &[u8]) -> Result<Wasm, String> {
 
     let mut raw_sections = Vec::new();
 
-    let mut b = WasmDecoder(b);
+    let mut b = WasmDecoder::new(b);
 
     while !b.is_empty() {
         let section_id = b.read_byte();
@@ -34,7 +34,7 @@ pub fn decode_bytes(mut b: &[u8]) -> Result<Wasm, String> {
     let mut sections: Vec<Section> = Vec::new();
 
     for (id, bytes) in raw_sections.iter().cloned() {
-        let mut bytes = WasmDecoder(bytes);
+        let mut bytes = WasmDecoder::new(bytes);
         let section = Section::decode(id, &mut bytes)?;
         sections.push(section);
     }

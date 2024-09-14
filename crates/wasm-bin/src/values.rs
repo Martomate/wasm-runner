@@ -1,18 +1,6 @@
 use crate::decoder::WasmDecoder;
 
 impl<'a> WasmDecoder<'a> {
-    pub fn read_byte(&mut self) -> u8 {
-        let res = self.0[0];
-        self.0 = &self.0[1..];
-        res
-    }
-
-    pub fn read_bytes(&mut self, count: usize) -> &'a [u8] {
-        let res = &self.0[..count];
-        self.0 = &self.0[count..];
-        res
-    }
-
     pub fn read_u32(&mut self) -> u32 {
         let b = self.read_byte();
 
@@ -60,7 +48,7 @@ mod tests {
 
         #[test]
         fn small_positive() {
-            let mut bytes = WasmDecoder(&[42, 0x7F]);
+            let mut bytes = WasmDecoder::new(&[42, 0x7F]);
             assert_eq!(bytes.read_u32(), 42);
             assert_eq!(bytes.read_u32(), 0x7F);
             assert!(bytes.is_empty());
@@ -68,7 +56,7 @@ mod tests {
 
         #[test]
         fn big_positive() {
-            let mut bytes = WasmDecoder(&[0xE5, 0x8E, 0x26]);
+            let mut bytes = WasmDecoder::new(&[0xE5, 0x8E, 0x26]);
             assert_eq!(bytes.read_u32(), 624485);
             assert!(bytes.is_empty());
         }
@@ -79,7 +67,7 @@ mod tests {
 
         #[test]
         fn small_positive() {
-            let mut bytes = WasmDecoder(&[42, 0x3F]);
+            let mut bytes = WasmDecoder::new(&[42, 0x3F]);
             assert_eq!(bytes.read_i32(), 42);
             assert_eq!(bytes.read_i32(), 0x3F);
             assert!(bytes.is_empty());
@@ -87,7 +75,7 @@ mod tests {
 
         #[test]
         fn small_negative() {
-            let mut bytes = WasmDecoder(&[0x40, 0x7F]);
+            let mut bytes = WasmDecoder::new(&[0x40, 0x7F]);
             assert_eq!(bytes.read_i32(), 0x40 - 0x80);
             assert_eq!(bytes.read_i32(), 0x7F - 0x80);
             assert!(bytes.is_empty());
@@ -95,25 +83,25 @@ mod tests {
 
         #[test]
         fn big_positive() {
-            let mut bytes = WasmDecoder(&[0x80, 42]);
+            let mut bytes = WasmDecoder::new(&[0x80, 42]);
             assert_eq!(bytes.read_i32(), 42 << 7);
             assert!(bytes.is_empty());
 
-            let mut bytes = WasmDecoder(&[0x80 | 0x4F, 0x80 | 0x0A, 42]);
+            let mut bytes = WasmDecoder::new(&[0x80 | 0x4F, 0x80 | 0x0A, 42]);
             assert_eq!(bytes.read_i32(), (42 << 14) | (0x0A << 7) | 0x4F);
             assert!(bytes.is_empty());
         }
 
         #[test]
         fn big_negative() {
-            let mut bytes = WasmDecoder(&[0xC0, 0xBB, 0x78]);
+            let mut bytes = WasmDecoder::new(&[0xC0, 0xBB, 0x78]);
             assert_eq!(bytes.read_i32(), -123456);
             assert!(bytes.is_empty());
         }
 
         #[test]
         fn example1() {
-            let mut bytes = WasmDecoder(&[128, 128, 192, 0]);
+            let mut bytes = WasmDecoder::new(&[128, 128, 192, 0]);
             assert_eq!(bytes.read_i32(), 1048576);
             assert!(bytes.is_empty());
         }
