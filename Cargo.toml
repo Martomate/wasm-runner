@@ -6,4 +6,9 @@ members = [
     "programs/add",
     "programs/box",
     "programs/hello",
+    "programs/log",
 ]
+
+[profile.release]
+lto = "fat"
+opt-level = "s"

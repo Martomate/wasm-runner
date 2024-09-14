@@ -4,16 +4,19 @@ use wasm_bin::decode_bytes;
 fn decode_add_example() {
     let example = include_bytes!("add.wasm");
 
-    let _wasm = decode_bytes(example).unwrap();
-
-    // assert_eq!(wasm, todo!());
+    decode_bytes(example).unwrap();
 }
 
 #[test]
 fn decode_box_example() {
     let example = include_bytes!("box.wasm");
 
-    let _wasm = decode_bytes(example).unwrap();
+    decode_bytes(example).unwrap();
+}
 
-    // assert_eq!(wasm, todo!());
+#[test]
+fn decode_log_example() {
+    let example = include_bytes!("log.wasm");
+
+    decode_bytes(example).unwrap();
 }

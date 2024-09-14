@@ -1,8 +1,6 @@
 use crate::decoder::WasmDecoder;
-use crate::{
-    instr::Expr,
-    types::{FuncType, GlobalType, MemoryType, RefType, TableType, ValType},
-};
+use crate::types::*;
+use crate::instr::Expr;
 
 #[derive(Debug, PartialEq, Eq)]
 enum ImportDesc {
@@ -277,9 +275,11 @@ pub enum Section {
     Memory(MemorySection),
     Global(GlobalSecion),
     Export(ExportSection),
+    Start(StartSection),
     Element(ElementSection),
     Code(CodeSection),
     Data(DataSection),
+    DataCount(DataCountSection),
 }
 
 impl Section {
@@ -293,11 +293,11 @@ impl Section {
             5 => MemorySection::decode_section(bytes).map(Section::Memory)?,
             6 => GlobalSecion::decode_section(bytes).map(Section::Global)?,
             7 => ExportSection::decode_section(bytes).map(Section::Export)?,
-            8 => todo!(),
+            8 => StartSection::decode_section(bytes).map(Section::Start)?,
             9 => ElementSection::decode_section(bytes).map(Section::Element)?,
             10 => CodeSection::decode_section(bytes).map(Section::Code)?,
             11 => DataSection::decode_section(bytes).map(Section::Data)?,
-            12 => todo!(),
+            12 => DataCountSection::decode_section(bytes).map(Section::DataCount)?,
             _ => return Err(format!("unknwon section id: {id}")),
         };
         Ok(section)
@@ -419,6 +419,19 @@ impl SectionDecoder for ExportSection {
 }
 
 #[derive(Debug, PartialEq, Eq)]
+pub struct StartSection {
+    func_idx: u32,
+}
+
+impl SectionDecoder for StartSection {
+    fn decode_section(bytes: &mut WasmDecoder) -> Result<Self, String> {
+        Ok(Self {
+            func_idx: bytes.read_u32(),
+        })
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
 pub struct ElementSection {
     elements: Vec<Element>,
 }
@@ -453,6 +466,19 @@ impl SectionDecoder for DataSection {
     fn decode_section(bytes: &mut WasmDecoder) -> Result<Self, String> {
         Ok(Self {
             datas: bytes.read_vec(|bytes| bytes.read_data())?,
+        })
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct DataCountSection {
+    count: u32,
+}
+
+impl SectionDecoder for DataCountSection {
+    fn decode_section(bytes: &mut WasmDecoder) -> Result<Self, String> {
+        Ok(Self {
+            count: bytes.read_u32(),
         })
     }
 }

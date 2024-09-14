@@ -15,6 +15,10 @@ name = "program-hello"
 version = "0.1.0"
 
 [[package]]
+name = "program-log"
+version = "0.1.0"
+
+[[package]]
 name = "wasm_bin"
 version = "0.1.0"
 

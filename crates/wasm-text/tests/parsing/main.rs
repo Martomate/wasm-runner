@@ -64,3 +64,18 @@ fn parse_add_example() {
 
     assert_eq!(actual, expected);
 }
+
+
+#[test]
+fn parse_box_example() {
+    let input = include_str!("box.wat");
+
+    wasm_text::parse_str(input).unwrap();
+}
+
+#[test]
+fn parse_log_example() {
+    let input = include_str!("log.wat");
+
+    wasm_text::parse_str(input).unwrap();
+}
