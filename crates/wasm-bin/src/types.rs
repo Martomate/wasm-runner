@@ -1,4 +1,4 @@
-use crate::decoder::WasmDecoder;
+use crate::{decoder::WasmDecoder, error::DecodingError};
 
 #[derive(Debug, PartialEq, Eq)]
 pub enum NumType {
@@ -54,9 +54,9 @@ pub struct GlobalType {
 }
 
 impl<'a> WasmDecoder<'a> {
-    pub fn read_functype(&mut self) -> Result<FuncType, String> {
+    pub fn read_functype(&mut self) -> Result<FuncType, DecodingError> {
         if self.read_u32() != 0x60 {
-            return Err("functype did not start with 0x60".into());
+            Err("functype did not start with 0x60")?;
         }
         let params = self.read_result_type()?;
         let returns = self.read_result_type()?;
@@ -64,7 +64,7 @@ impl<'a> WasmDecoder<'a> {
         Ok(FuncType { params, returns })
     }
 
-    pub fn read_result_type(&mut self) -> Result<ResultType, String> {
+    pub fn read_result_type(&mut self) -> Result<ResultType, DecodingError> {
         let num_vals = self.read_u32() as usize;
         let mut val_types = Vec::with_capacity(num_vals);
         for _ in 0..num_vals {
@@ -73,7 +73,7 @@ impl<'a> WasmDecoder<'a> {
         Ok(ResultType(val_types))
     }
 
-    pub fn read_val_type(&mut self) -> Result<ValType, String> {
+    pub fn read_val_type(&mut self) -> Result<ValType, DecodingError> {
         let b = self.read_byte();
         let res = match b {
             0x7F => ValType::Num(NumType::I32),
@@ -88,7 +88,7 @@ impl<'a> WasmDecoder<'a> {
         Ok(res)
     }
 
-    pub fn read_reftype(&mut self) -> Result<RefType, String> {
+    pub fn read_reftype(&mut self) -> Result<RefType, DecodingError> {
         let res = match self.read_byte() {
             0x70 => RefType::FuncRef,
             0x6F => RefType::ExternRef,
@@ -97,22 +97,22 @@ impl<'a> WasmDecoder<'a> {
         Ok(res)
     }
 
-    pub fn read_limits(&mut self) -> Result<Limits, String> {
+    pub fn read_limits(&mut self) -> Result<Limits, DecodingError> {
         let limit_kind = self.read_byte();
         let limits = match limit_kind {
             0x00 => Limits::Min(self.read_u32()),
             0x01 => Limits::MinMax(self.read_u32(), self.read_u32()),
-            _ => return Err(format!("invalid limit kind: {}", limit_kind)),
+            _ => Err(format!("invalid limit kind: {}", limit_kind))?,
         };
         Ok(limits)
     }
 
-    pub fn read_tabletype(&mut self) -> Result<TableType, String> {
+    pub fn read_tabletype(&mut self) -> Result<TableType, DecodingError> {
         let b = self.read_byte();
         let ref_type = match b {
             0x70 => RefType::FuncRef,
             0x6F => RefType::ExternRef,
-            _ => return Err(format!("invalid reftype: {}", b)),
+            _ => Err(format!("invalid reftype: {}", b))?,
         };
 
         let limits = self.read_limits()?;
@@ -120,17 +120,17 @@ impl<'a> WasmDecoder<'a> {
         Ok(TableType(ref_type, limits))
     }
 
-    pub fn read_memtype(&mut self) -> Result<MemoryType, String> {
+    pub fn read_memtype(&mut self) -> Result<MemoryType, DecodingError> {
         let limits = self.read_limits()?;
         Ok(MemoryType(limits))
     }
 
-    pub fn read_globaltype(&mut self) -> Result<GlobalType, String> {
+    pub fn read_globaltype(&mut self) -> Result<GlobalType, DecodingError> {
         let val_type = self.read_val_type()?;
         let mutable = match self.read_byte() {
             0x00 => false,
             0x01 => true,
-            b => return Err(format!("invalid mut byte in globaltype: {}", b)),
+            b => Err(format!("invalid mut byte in globaltype: {}", b))?,
         };
         Ok(GlobalType {
             t: val_type,

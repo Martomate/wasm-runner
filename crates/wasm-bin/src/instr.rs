@@ -1,4 +1,5 @@
 use crate::decoder::WasmDecoder;
+use crate::error::DecodingError;
 use crate::types::ValType;
 
 #[derive(Debug, PartialEq, Eq)]
@@ -154,7 +155,7 @@ pub enum Instr {
 }
 
 impl<'a> WasmDecoder<'a> {
-    pub fn read_expr(&mut self) -> Result<Expr, String> {
+    pub fn read_expr(&mut self) -> Result<Expr, DecodingError> {
         let mut instructions = Vec::new();
         while self.peek_byte() != 0x0B {
             instructions.push(self.read_instr()?);
@@ -163,13 +164,13 @@ impl<'a> WasmDecoder<'a> {
         Ok(Expr(instructions))
     }
 
-    fn read_memarg(&mut self) -> Result<MemArg, String> {
+    fn read_memarg(&mut self) -> Result<MemArg, DecodingError> {
         let align = self.read_u32();
         let offset = self.read_u32();
         Ok(MemArg { align, offset })
     }
 
-    fn read_blocktype(&mut self) -> Result<BlockType, String> {
+    fn read_blocktype(&mut self) -> Result<BlockType, DecodingError> {
         if self.peek_byte() == 0x40 {
             self.read_byte(); // consume the byte
             return Ok(BlockType::Void);
@@ -187,7 +188,7 @@ impl<'a> WasmDecoder<'a> {
             })
     }
 
-    pub fn read_instr(&mut self) -> Result<Instr, String> {
+    pub fn read_instr(&mut self) -> Result<Instr, DecodingError> {
         let opcode = self.read_byte();
         let instr = match opcode {
             0x00 => Instr::Unreachable,
@@ -215,7 +216,7 @@ impl<'a> WasmDecoder<'a> {
                         Instr::IfElse(bt, ins, Some(ins2))
                     }
                     0x08 => Instr::IfElse(bt, ins, None),
-                    b => return Err(format!("invalid if-else separator byte: {}", b)),
+                    b => Err(format!("invalid if-else separator byte: {}", b))?,
                 }
             }
             0x0C => Instr::Break(self.read_u32()),
@@ -371,11 +372,11 @@ impl<'a> WasmDecoder<'a> {
                     self.discard_byte(0x00)?;
                     Instr::MemoryFill
                 }
-                b => return Err(format!("unsupported byte after 0xFC: 0x{:x}", b)),
+                b => Err(format!("unsupported byte after 0xFC: 0x{:x}", b))?,
             },
 
             // TODO: add the rest!
-            _ => return Err(format!("unknown opcode: 0x{:x}", opcode)),
+            _ => Err(format!("unknown opcode: 0x{:x}", opcode))?,
         };
         Ok(instr)
     }

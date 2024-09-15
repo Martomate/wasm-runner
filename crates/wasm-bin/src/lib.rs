@@ -2,6 +2,7 @@ use decoder::WasmDecoder;
 use section::*;
 
 mod decoder;
+mod error;
 mod instr;
 mod section;
 mod types;

@@ -1,6 +1,7 @@
 use crate::decoder::WasmDecoder;
-use crate::types::*;
+use crate::error::{DecodingError, DecodingErrorExt};
 use crate::instr::Expr;
+use crate::types::*;
 
 #[derive(Debug, PartialEq, Eq)]
 enum ImportDesc {
@@ -76,14 +77,14 @@ struct Element {
 }
 
 impl<'a> WasmDecoder<'a> {
-    fn read_elemkind(&mut self) -> Result<(), String> {
+    fn read_elemkind(&mut self) -> Result<(), DecodingError> {
         if self.read_byte() != 0 {
-            return Err("element did not have elementkind 0".into());
+            Err("element did not have elementkind 0")?;
         }
         Ok(())
     }
 
-    fn read_element(&mut self) -> Result<Element, String> {
+    fn read_element(&mut self) -> Result<Element, DecodingError> {
         let kind = self.read_u32();
         let element = match kind {
             0 => {
@@ -174,30 +175,30 @@ impl<'a> WasmDecoder<'a> {
                     mode: ElementMode::Declarative,
                 }
             }
-            _ => return Err(format!("unknown element kind: {}", kind)),
+            _ => Err(format!("unknown element kind: {}", kind))?,
         };
         Ok(element)
     }
 
-    fn read_export(&mut self) -> Result<Export, String> {
+    fn read_export(&mut self) -> Result<Export, DecodingError> {
         let name = self.read_name()?;
         let desc = match self.read_byte() {
             0x00 => ExportDesc::Func(self.read_u32()),
             0x01 => ExportDesc::Table(self.read_u32()),
             0x02 => ExportDesc::Mem(self.read_u32()),
             0x03 => ExportDesc::Global(self.read_u32()),
-            b => return Err(format!("invalid export desc variant: {}", b)),
+            b => Err(format!("invalid export desc variant: {}", b))?,
         };
         Ok(Export { name, desc })
     }
 
-    fn read_locals(&mut self) -> Result<Locals, String> {
+    fn read_locals(&mut self) -> Result<Locals, DecodingError> {
         let n = self.read_u32();
         let t = self.read_val_type()?;
         Ok(Locals { n, t })
     }
 
-    fn read_code(&mut self) -> Result<Code, String> {
+    fn read_code(&mut self) -> Result<Code, DecodingError> {
         let size = self.read_u32();
         let locals = self.read_vec(Self::read_locals)?;
         let expr = self.read_expr()?;
@@ -207,7 +208,7 @@ impl<'a> WasmDecoder<'a> {
         })
     }
 
-    fn read_data(&mut self) -> Result<Data, String> {
+    fn read_data(&mut self) -> Result<Data, DecodingError> {
         let data = match self.read_u32() {
             0 => {
                 let e = self.read_expr()?;
@@ -239,12 +240,12 @@ impl<'a> WasmDecoder<'a> {
                     },
                 }
             }
-            b => return Err(format!("invalid data variant: {}", b)),
+            b => Err(format!("invalid data variant: {}", b))?,
         };
         Ok(data)
     }
 
-    fn read_import(&mut self) -> Result<ImportType, String> {
+    fn read_import(&mut self) -> Result<ImportType, DecodingError> {
         let mod_name = self.read_name()?;
         let name = self.read_name()?;
 
@@ -254,7 +255,7 @@ impl<'a> WasmDecoder<'a> {
             0x01 => ImportDesc::Table(self.read_tabletype()?),
             0x02 => ImportDesc::Memory(self.read_memtype()?),
             0x03 => ImportDesc::Global(self.read_globaltype()?),
-            _ => return Err(format!("invalid importdesc kind: {}", kind)),
+            _ => Err(format!("invalid importdesc kind: {}", kind))?,
         };
 
         Ok(ImportType {
@@ -283,7 +284,7 @@ pub enum Section {
 }
 
 impl Section {
-    pub fn decode(id: u8, bytes: &mut WasmDecoder) -> Result<Section, String> {
+    pub fn decode(id: u8, bytes: &mut WasmDecoder) -> Result<Section, DecodingError> {
         let section = match id {
             0 => CustomSection::decode_section(bytes).map(Section::Custom)?,
             1 => TypeSection::decode_section(bytes).map(Section::Type)?,
@@ -298,28 +299,164 @@ impl Section {
             10 => CodeSection::decode_section(bytes).map(Section::Code)?,
             11 => DataSection::decode_section(bytes).map(Section::Data)?,
             12 => DataCountSection::decode_section(bytes).map(Section::DataCount)?,
-            _ => return Err(format!("unknwon section id: {id}")),
+            _ => Err(format!("unknwon section id: {id}"))?,
         };
         Ok(section)
     }
 }
 
 pub trait SectionDecoder: Sized {
-    fn decode_section(bytes: &mut WasmDecoder) -> Result<Self, String>;
+    fn decode_section(bytes: &mut WasmDecoder) -> Result<Self, DecodingError>;
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub struct CustomSection {
-    name: String,
-    data: Vec<u8>,
+pub enum CustomSection {
+    Name(Box<NameSubSections>),
+    Unknown { name: String, data: Vec<u8> },
 }
 
+#[derive(Debug, PartialEq, Eq)]
+pub struct NameSubSections {
+    module_name: Option<String>,
+    func_names: Option<NameMap>,
+    local_names: Option<IndirectNameMap>,
+    label_names: Option<NameMap>,
+    table_names: Option<NameMap>,
+    memory_names: Option<NameMap>,
+    global_names: Option<NameMap>,
+    elem_names: Option<NameMap>,
+    data_names: Option<NameMap>,
+    tag_names: Option<NameMap>,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct NameMap(Vec<(u32, String)>);
+
+#[derive(Debug, PartialEq, Eq)]
+pub struct IndirectNameMap(Vec<(u32, NameMap)>);
+
 impl SectionDecoder for CustomSection {
-    fn decode_section(bytes: &mut WasmDecoder) -> Result<Self, String> {
-        Ok(Self {
-            name: bytes.read_name()?,
-            data: bytes.read_all_bytes().to_owned(),
-        })
+    fn decode_section(bytes: &mut WasmDecoder) -> Result<Self, DecodingError> {
+        let name = bytes.read_name()?;
+        let section = match name.as_str() {
+            "name" => Self::Name(Box::new(bytes.read_custom_name_subsections()?)),
+            _ => Self::Unknown {
+                name,
+                data: bytes.read_all_bytes().to_owned(),
+            },
+        };
+        Ok(section)
+    }
+}
+
+impl<'a> WasmDecoder<'a> {
+    fn read_custom_name_subsections(&mut self) -> Result<NameSubSections, DecodingError> {
+        let mut section = NameSubSections {
+            module_name: None,
+            func_names: None,
+            local_names: None,
+            label_names: None,
+            table_names: None,
+            memory_names: None,
+            global_names: None,
+            elem_names: None,
+            data_names: None,
+            tag_names: None,
+        };
+
+        let mut next_id = 0;
+        while !self.is_empty() {
+            let id = self.read_byte();
+            let size = self.read_u32();
+
+            if id < next_id {
+                Err(format!(
+                    "expected subsections in increasing order, but got id: {}",
+                    id
+                ))?;
+            }
+
+            if next_id != id {
+                next_id = id;
+            }
+
+            match id {
+                0 => {
+                    section.module_name = Some(self.ensuring_size(size, |bytes| {
+                        bytes.read_name().context("parsing module name")
+                    })?)
+                }
+                1 => {
+                    section.func_names = Some(self.ensuring_size(size, |bytes| {
+                        bytes.read_name_map().context("parsing func names")
+                    })?)
+                }
+                2 => {
+                    section.local_names = Some(self.ensuring_size(size, |bytes| {
+                        bytes
+                            .read_indirect_name_map()
+                            .context("parsing local names")
+                    })?)
+                }
+                3 => {
+                    section.label_names = Some(self.ensuring_size(size, |bytes| {
+                        bytes.read_name_map().context("parsing label names")
+                    })?)
+                }
+                5 => {
+                    section.table_names = Some(self.ensuring_size(size, |bytes| {
+                        bytes.read_name_map().context("parsing table names")
+                    })?)
+                }
+                6 => {
+                    section.memory_names = Some(self.ensuring_size(size, |bytes| {
+                        bytes.read_name_map().context("parsing memory names")
+                    })?)
+                }
+                7 => {
+                    section.global_names = Some(self.ensuring_size(size, |bytes| {
+                        bytes.read_name_map().context("parsing global names")
+                    })?)
+                }
+                8 => {
+                    section.elem_names = Some(self.ensuring_size(size, |bytes| {
+                        bytes.read_name_map().context("parsing element names")
+                    })?)
+                }
+                9 => {
+                    section.data_names = Some(self.ensuring_size(size, |bytes| {
+                        bytes.read_name_map().context("parsing data names")
+                    })?)
+                }
+                11 => {
+                    section.tag_names = Some(self.ensuring_size(size, |bytes| {
+                        bytes.read_name_map().context("parsing tag names")
+                    })?)
+                }
+                _ => {
+                    println!("unknown subsection of name section: {}", id);
+                    self.read_bytes(size as usize);
+                }
+            };
+        }
+        Ok(section)
+    }
+
+    fn read_name_map(&mut self) -> Result<NameMap, DecodingError> {
+        Ok(NameMap(self.read_vec(|bytes| {
+            let idx = bytes.read_u32();
+            let name_map = bytes.read_name()?;
+            Ok((idx, name_map))
+        })?))
+    }
+
+    fn read_indirect_name_map(&mut self) -> Result<IndirectNameMap, DecodingError> {
+        let mappings = self.read_vec(|bytes| {
+            let idx = bytes.read_u32();
+            let name_map = bytes.read_name_map()?;
+            Ok((idx, name_map))
+        })?;
+        Ok(IndirectNameMap(mappings))
     }
 }
 
@@ -329,7 +466,7 @@ pub struct TypeSection {
 }
 
 impl SectionDecoder for TypeSection {
-    fn decode_section(bytes: &mut WasmDecoder) -> Result<Self, String> {
+    fn decode_section(bytes: &mut WasmDecoder) -> Result<Self, DecodingError> {
         Ok(Self {
             functions: bytes.read_vec(|bytes| bytes.read_functype())?,
         })
@@ -342,7 +479,7 @@ pub struct ImportSection {
 }
 
 impl SectionDecoder for ImportSection {
-    fn decode_section(bytes: &mut WasmDecoder) -> Result<Self, String> {
+    fn decode_section(bytes: &mut WasmDecoder) -> Result<Self, DecodingError> {
         Ok(Self {
             imports: bytes.read_vec(|bytes| bytes.read_import())?,
         })
@@ -355,7 +492,7 @@ pub struct FunctionSection {
 }
 
 impl SectionDecoder for FunctionSection {
-    fn decode_section(bytes: &mut WasmDecoder) -> Result<Self, String> {
+    fn decode_section(bytes: &mut WasmDecoder) -> Result<Self, DecodingError> {
         Ok(Self {
             type_ids: bytes.read_vec(|bytes| Ok(bytes.read_u32()))?,
         })
@@ -368,7 +505,7 @@ pub struct TableSection {
 }
 
 impl SectionDecoder for TableSection {
-    fn decode_section(bytes: &mut WasmDecoder) -> Result<Self, String> {
+    fn decode_section(bytes: &mut WasmDecoder) -> Result<Self, DecodingError> {
         Ok(Self {
             tables: bytes.read_vec(|bytes| bytes.read_tabletype())?,
         })
@@ -381,7 +518,7 @@ pub struct MemorySection {
 }
 
 impl SectionDecoder for MemorySection {
-    fn decode_section(bytes: &mut WasmDecoder) -> Result<Self, String> {
+    fn decode_section(bytes: &mut WasmDecoder) -> Result<Self, DecodingError> {
         Ok(Self {
             memories: bytes.read_vec(|bytes| bytes.read_memtype())?,
         })
@@ -394,7 +531,7 @@ pub struct GlobalSecion {
 }
 
 impl SectionDecoder for GlobalSecion {
-    fn decode_section(bytes: &mut WasmDecoder) -> Result<Self, String> {
+    fn decode_section(bytes: &mut WasmDecoder) -> Result<Self, DecodingError> {
         Ok(Self {
             globals: bytes.read_vec(|bytes| {
                 let global_type = bytes.read_globaltype()?;
@@ -411,7 +548,7 @@ pub struct ExportSection {
 }
 
 impl SectionDecoder for ExportSection {
-    fn decode_section(bytes: &mut WasmDecoder) -> Result<Self, String> {
+    fn decode_section(bytes: &mut WasmDecoder) -> Result<Self, DecodingError> {
         Ok(Self {
             exports: bytes.read_vec(|bytes| bytes.read_export())?,
         })
@@ -424,7 +561,7 @@ pub struct StartSection {
 }
 
 impl SectionDecoder for StartSection {
-    fn decode_section(bytes: &mut WasmDecoder) -> Result<Self, String> {
+    fn decode_section(bytes: &mut WasmDecoder) -> Result<Self, DecodingError> {
         Ok(Self {
             func_idx: bytes.read_u32(),
         })
@@ -437,7 +574,7 @@ pub struct ElementSection {
 }
 
 impl SectionDecoder for ElementSection {
-    fn decode_section(bytes: &mut WasmDecoder) -> Result<Self, String> {
+    fn decode_section(bytes: &mut WasmDecoder) -> Result<Self, DecodingError> {
         Ok(Self {
             elements: bytes.read_vec(|bytes| bytes.read_element())?,
         })
@@ -450,7 +587,7 @@ pub struct CodeSection {
 }
 
 impl SectionDecoder for CodeSection {
-    fn decode_section(bytes: &mut WasmDecoder) -> Result<Self, String> {
+    fn decode_section(bytes: &mut WasmDecoder) -> Result<Self, DecodingError> {
         Ok(Self {
             codes: bytes.read_vec(|bytes| bytes.read_code())?,
         })
@@ -463,7 +600,7 @@ pub struct DataSection {
 }
 
 impl SectionDecoder for DataSection {
-    fn decode_section(bytes: &mut WasmDecoder) -> Result<Self, String> {
+    fn decode_section(bytes: &mut WasmDecoder) -> Result<Self, DecodingError> {
         Ok(Self {
             datas: bytes.read_vec(|bytes| bytes.read_data())?,
         })
@@ -476,7 +613,7 @@ pub struct DataCountSection {
 }
 
 impl SectionDecoder for DataCountSection {
-    fn decode_section(bytes: &mut WasmDecoder) -> Result<Self, String> {
+    fn decode_section(bytes: &mut WasmDecoder) -> Result<Self, DecodingError> {
         Ok(Self {
             count: bytes.read_u32(),
         })

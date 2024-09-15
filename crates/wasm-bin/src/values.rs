@@ -1,4 +1,4 @@
-use crate::decoder::WasmDecoder;
+use crate::{decoder::WasmDecoder, error::DecodingError};
 
 impl<'a> WasmDecoder<'a> {
     pub fn read_u32(&mut self) -> u32 {
@@ -35,9 +35,9 @@ impl<'a> WasmDecoder<'a> {
         }
     }
 
-    pub fn read_name(&mut self) -> Result<String, String> {
+    pub fn read_name(&mut self) -> Result<String, DecodingError> {
         let bytes = self.read_vec(|bytes| Ok(bytes.read_byte()))?;
-        String::from_utf8(bytes).map_err(|err| err.to_string())
+        String::from_utf8(bytes).map_err(|err| format!("{}, bytes: {:?}", err.utf8_error(), err.as_bytes()).into())
     }
 }
 
