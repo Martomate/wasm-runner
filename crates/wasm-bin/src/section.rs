@@ -3,74 +3,74 @@ use crate::error::{DecodingError, DecodingErrorExt};
 use crate::instr::Expr;
 use crate::types::*;
 
-#[derive(Debug, PartialEq, Eq)]
-enum ImportDesc {
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub enum ImportDesc {
     TypeIdx(u32),
     Table(TableType),
     Memory(MemoryType),
     Global(GlobalType),
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct ImportType {
-    mod_name: String,
-    name: String,
-    desc: ImportDesc,
+    pub mod_name: String,
+    pub name: String,
+    pub desc: ImportDesc,
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct Export {
-    name: String,
-    desc: ExportDesc,
+    pub name: String,
+    pub desc: ExportDesc,
 }
 
-#[derive(Debug, PartialEq, Eq)]
-enum ExportDesc {
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub enum ExportDesc {
     Func(u32),
     Table(u32),
     Mem(u32),
     Global(u32),
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct Code {
-    size: u32,
-    func: (Vec<Locals>, Expr),
+    pub size: u32,
+    pub func: (Vec<Locals>, Expr),
 }
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct Data {
-    init: Vec<u8>,
-    mode: DataMode,
+    pub init: Vec<u8>,
+    pub mode: DataMode,
 }
 
 #[derive(Debug, PartialEq, Eq)]
-enum DataMode {
+pub enum DataMode {
     Passive,
     Active { memory: u32, offset: Expr },
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 enum ElementInit {
     Implicit(Vec<u32>),
     Explicit(Vec<Expr>),
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 enum ElementMode {
     Passive,
     Active { table: u32, offset: Expr },
     Declarative,
 }
 
-#[derive(Debug, PartialEq, Eq)]
-struct Locals {
-    n: u32,
-    t: ValType,
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub struct Locals {
+    pub n: u32,
+    pub t: ValType,
 }
 
-#[derive(Debug, PartialEq, Eq)]
-struct Element {
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub struct Element {
     t: RefType,
     init: ElementInit,
     mode: ElementMode,
@@ -274,7 +274,7 @@ pub enum Section {
     Function(FunctionSection),
     Table(TableSection),
     Memory(MemorySection),
-    Global(GlobalSecion),
+    Global(GlobalSection),
     Export(ExportSection),
     Start(StartSection),
     Element(ElementSection),
@@ -292,7 +292,7 @@ impl Section {
             3 => FunctionSection::decode_section(bytes).map(Section::Function)?,
             4 => TableSection::decode_section(bytes).map(Section::Table)?,
             5 => MemorySection::decode_section(bytes).map(Section::Memory)?,
-            6 => GlobalSecion::decode_section(bytes).map(Section::Global)?,
+            6 => GlobalSection::decode_section(bytes).map(Section::Global)?,
             7 => ExportSection::decode_section(bytes).map(Section::Export)?,
             8 => StartSection::decode_section(bytes).map(Section::Start)?,
             9 => ElementSection::decode_section(bytes).map(Section::Element)?,
@@ -460,9 +460,9 @@ impl<'a> WasmDecoder<'a> {
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct TypeSection {
-    functions: Vec<FuncType>,
+    pub functions: Vec<FuncType>,
 }
 
 impl SectionDecoder for TypeSection {
@@ -473,9 +473,9 @@ impl SectionDecoder for TypeSection {
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct ImportSection {
-    imports: Vec<ImportType>,
+    pub imports: Vec<ImportType>,
 }
 
 impl SectionDecoder for ImportSection {
@@ -486,9 +486,9 @@ impl SectionDecoder for ImportSection {
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct FunctionSection {
-    type_ids: Vec<u32>,
+    pub type_ids: Vec<u32>,
 }
 
 impl SectionDecoder for FunctionSection {
@@ -526,11 +526,11 @@ impl SectionDecoder for MemorySection {
 }
 
 #[derive(Debug, PartialEq, Eq)]
-pub struct GlobalSecion {
+pub struct GlobalSection {
     globals: Vec<(GlobalType, Expr)>,
 }
 
-impl SectionDecoder for GlobalSecion {
+impl SectionDecoder for GlobalSection {
     fn decode_section(bytes: &mut WasmDecoder) -> Result<Self, DecodingError> {
         Ok(Self {
             globals: bytes.read_vec(|bytes| {
@@ -542,9 +542,9 @@ impl SectionDecoder for GlobalSecion {
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct ExportSection {
-    exports: Vec<Export>,
+    pub exports: Vec<Export>,
 }
 
 impl SectionDecoder for ExportSection {
@@ -557,7 +557,7 @@ impl SectionDecoder for ExportSection {
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct StartSection {
-    func_idx: u32,
+    pub func_idx: u32,
 }
 
 impl SectionDecoder for StartSection {
@@ -570,7 +570,7 @@ impl SectionDecoder for StartSection {
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct ElementSection {
-    elements: Vec<Element>,
+    pub elements: Vec<Element>,
 }
 
 impl SectionDecoder for ElementSection {
@@ -581,9 +581,9 @@ impl SectionDecoder for ElementSection {
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct CodeSection {
-    codes: Vec<Code>,
+    pub codes: Vec<Code>,
 }
 
 impl SectionDecoder for CodeSection {
@@ -596,7 +596,7 @@ impl SectionDecoder for CodeSection {
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct DataSection {
-    datas: Vec<Data>,
+    pub datas: Vec<Data>,
 }
 
 impl SectionDecoder for DataSection {
@@ -609,7 +609,7 @@ impl SectionDecoder for DataSection {
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct DataCountSection {
-    count: u32,
+    pub count: u32,
 }
 
 impl SectionDecoder for DataCountSection {

@@ -2,23 +2,23 @@ use crate::decoder::WasmDecoder;
 use crate::error::DecodingError;
 use crate::types::ValType;
 
-#[derive(Debug, PartialEq, Eq)]
-pub struct Expr(Vec<Instr>);
+#[derive(Debug, PartialEq, Eq, Clone)]
+pub struct Expr(pub Vec<Instr>);
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct MemArg {
     pub align: u32,
     pub offset: u32,
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub enum BlockType {
     Void,
     ValType(ValType),
     NewType(u64),
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub enum Instr {
     Unreachable,
     Nop,
