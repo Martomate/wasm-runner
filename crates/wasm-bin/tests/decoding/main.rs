@@ -6,7 +6,8 @@ fn decode_add_example() {
 
     let wasm = decode_bytes(example).unwrap();
 
-    let res = WasmInterpreter::new(wasm).execute("add", vec!["17", "65"]);
+    let mut memories = WasmInterpreter::create_memories(&wasm);
+    let res = WasmInterpreter::new(wasm).execute("add", vec!["17", "65"], &mut memories);
 
     assert_eq!(res, "82");
 }
@@ -15,13 +16,16 @@ fn decode_add_example() {
 fn decode_box_example() {
     let example = include_bytes!("box.wasm");
 
-    let _wasm = decode_bytes(example).unwrap();
+    let wasm = decode_bytes(example).unwrap();
 
-    // let res = WasmInterpreter::new(wasm).execute("calc", vec!["17"]);
+    let mut memories = WasmInterpreter::create_memories(&wasm);
+    let mut interpreter = WasmInterpreter::new(wasm);
+    let res = interpreter.execute("calc", vec!["17"], &mut memories);
 
-    // TODO: check wasm memory at location `res`, and expect to find (17 + 42)
+    let ptr = res.parse::<u32>().unwrap();
+    let ans = memories[0].read_byte(ptr);
 
-    // assert_eq!(res, "");
+    assert_eq!(ans, 17 + 42);
 }
 
 #[test]
@@ -38,10 +42,15 @@ fn decode_log_example() {
         vec![]
     }
 
+    let mut memories = WasmInterpreter::create_memories(&wasm);
     let mut interpreter = WasmInterpreter::new(wasm);
     interpreter.bind_external_function("env", "console_log", console_log);
-    let res = interpreter.execute("run", vec![]);
+    let res = interpreter.execute("run", vec![], &mut memories);
 
     assert_eq!(res, "");
     assert_eq!(unsafe { LOGGED_MESSAGES.clone() }, vec![vec![1048576]]); // this is a pointer into the wasm memory
+
+    let message_ptr = unsafe { LOGGED_MESSAGES.clone() }[0][0] as u32;
+    let message = String::from_utf8(memories[0].read_c_string(message_ptr).to_owned()).unwrap();
+    assert_eq!(message, "Hello");
 }

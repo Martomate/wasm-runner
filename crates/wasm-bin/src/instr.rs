@@ -25,9 +25,9 @@ pub enum Instr {
     Block(BlockType, Vec<Instr>),
     Loop(BlockType, Vec<Instr>),
     IfElse(BlockType, Vec<Instr>, Option<Vec<Instr>>),
-    Break(u32),
-    BreakIf(u32),
-    BreakTable(Vec<u32>, u32),
+    Branch(u32),
+    BranchIf(u32),
+    BranchTable(Vec<u32>, u32),
     Return,
     Call(u32),
     CallIndirect(u32, u32),
@@ -219,9 +219,9 @@ impl<'a> WasmDecoder<'a> {
                     b => Err(format!("invalid if-else separator byte: {}", b))?,
                 }
             }
-            0x0C => Instr::Break(self.read_u32()),
-            0x0D => Instr::BreakIf(self.read_u32()),
-            0x0E => Instr::BreakTable(
+            0x0C => Instr::Branch(self.read_u32()),
+            0x0D => Instr::BranchIf(self.read_u32()),
+            0x0E => Instr::BranchTable(
                 self.read_vec(|bytes| Ok(bytes.read_u32()))?,
                 self.read_u32(),
             ),

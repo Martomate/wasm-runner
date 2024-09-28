@@ -41,6 +41,22 @@ pub enum Limits {
     MinMax(u32, u32),
 }
 
+impl Limits {
+    pub fn min(&self) -> u32 {
+        match self {
+            Limits::Min(v) => *v,
+            Limits::MinMax(v, _) => *v,
+        }
+    }
+
+    pub fn max(&self) -> Option<u32> {
+        match self {
+            Limits::Min(_) => None,
+            Limits::MinMax(_, v) => Some(*v),
+        }
+    }
+}
+
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct MemoryType(pub Limits);
 

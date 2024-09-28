@@ -514,7 +514,7 @@ impl SectionDecoder for TableSection {
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct MemorySection {
-    memories: Vec<MemoryType>,
+    pub memories: Vec<MemoryType>,
 }
 
 impl SectionDecoder for MemorySection {
