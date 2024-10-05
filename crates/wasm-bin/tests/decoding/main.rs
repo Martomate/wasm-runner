@@ -1,4 +1,4 @@
-use wasm_bin::{decode_bytes, Value, WasmInterpreter};
+use wasm_bin::{decode_bytes, run::{Value, WasmInterpreter}};
 
 #[test]
 fn decode_add_example() {
