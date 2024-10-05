@@ -124,6 +124,12 @@ pub enum Instr {
     I32WrapI64,
     I64ExtendI32U,
 
+    I32Extend8S,
+    I32Extend16S,
+    I64Extend8S,
+    I64Extend16S,
+    I64Extend32S,
+
     I32Load(MemArg),
     I64Load(MemArg),
     F32Load(MemArg),
@@ -352,6 +358,12 @@ impl<'a> WasmDecoder<'a> {
 
             0xA7 => Instr::I32WrapI64,
             0xAD => Instr::I64ExtendI32U,
+
+            0xC0 => Instr::I32Extend8S,
+            0xC1 => Instr::I32Extend16S,
+            0xC2 => Instr::I64Extend8S,
+            0xC3 => Instr::I64Extend16S,
+            0xC4 => Instr::I64Extend32S,
 
             0xFC => match self.read_u32() {
                 8 => {

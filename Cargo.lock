@@ -3,19 +3,7 @@
 version = 3
 
 [[package]]
-name = "program-add"
-version = "0.1.0"
-
-[[package]]
-name = "program-box"
-version = "0.1.0"
-
-[[package]]
-name = "program-hello"
-version = "0.1.0"
-
-[[package]]
-name = "program-log"
+name = "programs"
 version = "0.1.0"
 
 [[package]]

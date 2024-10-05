@@ -1,12 +1,11 @@
 use std::{
-    iter,
-    ops::{Index, IndexMut},
+    fmt::Display, iter, ops::{Index, IndexMut}
 };
 
 use decoder::WasmDecoder;
 use instr::{BlockType, Instr, MemArg};
 use section::*;
-use types::{FuncType, Limits, ValType};
+use types::{FuncType, Limits, NumType, RefType, TableType, ValType};
 
 mod decoder;
 mod error;
@@ -103,7 +102,7 @@ impl WasmFile {
 
 struct ExternalFunctionBinding {
     signature: FuncType,
-    handler: fn(&[i32]) -> Vec<i32>,
+    handler: fn(&[Value]) -> Vec<Value>,
 }
 
 pub struct WasmMemory {
@@ -134,7 +133,15 @@ impl WasmMemory {
         if (ptr as usize + N) <= self.bytes.len() {
             self.bytes[ptr as usize..][..N].copy_from_slice(&v);
         } else {
-            panic!("memory read out of bounds");
+            panic!("memory write out of bounds, max: {}, ptr: {}, N: {}, limits: {:?}", self.bytes.len(), ptr, N, self.limits);
+        }
+    }
+
+    pub fn write_bytes(&mut self, ptr: u32, v: &[u8]) {
+        if (ptr as usize + v.len()) <= self.bytes.len() {
+            self.bytes[ptr as usize..][..v.len()].copy_from_slice(v);
+        } else {
+            panic!("memory write out of bounds");
         }
     }
 
@@ -173,6 +180,23 @@ impl WasmMemory {
     }
 }
 
+struct WasmGlobal {
+    mutable: bool,
+    value: Value,
+}
+
+struct WasmTable {
+    t: TableType,
+    elems: Vec<Ref>,
+}
+
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+enum Ref {
+    Null,
+    I32(u32),
+    Func(u32),
+}
+
 pub struct WasmInterpreter {
     wasm: WasmFile,
     imports: Vec<ExternalFunctionBinding>,
@@ -192,7 +216,9 @@ impl WasmInterpreter {
             for m in mem.memories.iter() {
                 let limits = m.0.clone();
                 memories.push(WasmMemory {
-                    bytes: iter::repeat(0).take((limits.min() as usize) << 16).collect(),
+                    bytes: iter::repeat(0)
+                        .take((limits.min() as usize) << 16)
+                        .collect(),
                     limits,
                 });
             }
@@ -221,7 +247,7 @@ impl WasmInterpreter {
         &mut self,
         mod_name: &str,
         name: &str,
-        handler: fn(&[i32]) -> Vec<i32>,
+        handler: fn(&[Value]) -> Vec<Value>,
     ) {
         let imports = self
             .wasm
@@ -276,8 +302,11 @@ impl WasmInterpreter {
         else {
             panic!("not a function");
         };
+        let exported_function_idx = exported_function_idx - self.wasm.import_section.as_ref().map(|s| s.imports.len() as u32).unwrap_or(0);
 
-        let function = types_section.functions[exported_function_idx as usize].clone();
+        let function = types_section.functions
+            [functions_section.type_ids[exported_function_idx as usize] as usize]
+            .clone();
 
         let param_types = function.params.0.clone();
         if param_types.len() != parameters.len() {
@@ -288,29 +317,72 @@ impl WasmInterpreter {
             );
         }
 
-        let param_values: Vec<i32> = param_types
+        let param_values: Vec<Value> = param_types
             .iter()
             .zip(parameters.iter())
             .map(|(t, s)| {
-                if *t != ValType::Num(types::NumType::I32) {
+                if *t != ValType::Num(NumType::I32) {
                     panic!("only i32 parameters are supported at this point");
                 }
-                s.parse::<i32>().unwrap()
+                Value::I32(s.parse::<i32>().unwrap())
             })
             .collect();
 
         let return_types = function.returns.0.clone();
 
-        let code_idx = functions_section
-            .type_ids
-            .iter()
-            .position(|&type_idx| type_idx == exported_function_idx)
-            .unwrap();
         let Code {
             func: (locals, body),
             size: _,
-        } = self.wasm.code_section.clone().unwrap().codes[code_idx].clone();
-        let res = self.run_code(&locals, &body.0, param_values, return_types.len(), memories);
+        } = self.wasm.code_section.clone().unwrap().codes[exported_function_idx as usize].clone();
+
+        let mut globals: Vec<WasmGlobal> = self.wasm.global_section.clone().unwrap_or_else(|| GlobalSection { globals: vec![] }).globals.iter()
+            .map(|(g, e)| {
+                if e.0.len() != 1 {
+                    panic!("global did not have exactly 1 instruction, which is not supported yet");
+                }
+                let value: Value = match &e.0[0] {
+                    Instr::I32Const(v) => Value::I32(*v),
+                    i => panic!("unsupported instr for global: {:?}", i),
+                };
+                WasmGlobal { mutable: g.mutable, value }
+            }).collect();
+
+        let tables = self.wasm.table_section.clone().unwrap_or_else(|| TableSection { tables: vec![] }).tables;
+
+        let mut tables: Vec<WasmTable> = tables
+            .iter().map(|table| {
+                let TableType(t, l) = table;
+                let value: Ref = match t {
+                    RefType::FuncRef => Ref::Func(0),
+                    t => todo!("{:?}", t),
+                };
+                WasmTable { t: table.clone(), elems: iter::repeat(value).take(l.min() as usize).collect() }
+            }).collect();
+        
+        let elements = self.wasm.element_section.clone().unwrap_or_else(|| ElementSection { elements: vec![] }).elements;
+        for e in elements {
+            if let ElementMode::Active { table, offset } = e.mode {
+                if offset.0.len() != 1 {
+                    panic!("expected 1 instruction for elem offset eval, but got {} ", offset.0.len());
+                }
+                let offset = match &offset.0[0] {
+                    Instr::I32Const(v) => *v,
+                    _ => panic!("unsupported instr for active elem")
+                };
+
+                match &e.init {
+                    ElementInit::Implicit(fns) => {
+                        let table = &mut tables[table as usize];
+                        for i in 0..fns.len() {
+                            table.elems[i + offset as usize] = Ref::Func(fns[i])
+                        }
+                    }
+                    ElementInit::Explicit(_) => todo!()
+                }
+            }
+        }
+
+        let res = self.run_code(&locals, &body.0, param_values, return_types.len(), memories, &mut globals, &mut tables);
 
         res.into_iter()
             .map(|n| n.to_string())
@@ -322,21 +394,29 @@ impl WasmInterpreter {
         &self,
         locals: &[Locals],
         body: &[Instr],
-        parameters: Vec<i32>,
+        parameters: Vec<Value>,
         num_returns_values: usize,
         memories: &mut [WasmMemory],
-    ) -> Vec<i32> {
+        globals: &mut [WasmGlobal],
+        tables: &mut [WasmTable],
+    ) -> Vec<Value> {
         let mut frame = StackFrame::new();
         frame.push_all(parameters);
         frame.push_all(
             locals
                 .iter()
                 .flat_map(|l| iter::repeat(l.t.clone()).take(l.n as usize))
-                .map(|_| 0),
+                .map(|t| {
+                    match t {
+                        ValType::Num(NumType::I32) => Value::I32(0),
+                        ValType::Num(NumType::I64) => Value::I64(0),
+                        t => todo!("{:?}", t),
+                    }
+                }),
         );
 
         for op in body {
-            if let Some(l_idx) = frame.run_instruction(op, self, memories, 0) {
+            if let Some(l_idx) = frame.run_instruction(op, self, memories, globals, tables, 0) {
                 if l_idx != 0 {
                     panic!("cannot branch out of function, expected 0, got {}", l_idx);
                 }
@@ -349,7 +429,40 @@ impl WasmInterpreter {
 }
 
 struct StackFrame {
-    frame: Vec<i32>,
+    frame: Vec<Value>,
+}
+
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub enum Value {
+    I32(i32),
+    I64(i64),
+}
+
+impl Value {
+    pub fn as_i32(self) -> Option<i32> {
+        if let Value::I32(v) = self {
+            Some(v)
+        } else {
+            None
+        }
+    }
+    
+    pub fn as_i64(self) -> Option<i64> {
+        if let Value::I64(v) = self {
+            Some(v)
+        } else {
+            None
+        }
+    }
+}
+
+impl Display for Value {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Value::I32(v) => write!(f, "{}", v),
+            Value::I64(v) => write!(f, "{}", v),
+        }
+    }
 }
 
 impl StackFrame {
@@ -357,29 +470,29 @@ impl StackFrame {
         Self { frame: Vec::new() }
     }
 
-    fn push(&mut self, value: i32) {
+    fn push(&mut self, value: Value) {
         self.frame.push(value);
     }
 
-    fn push_all(&mut self, values: impl IntoIterator<Item = i32>) {
+    fn push_all(&mut self, values: impl IntoIterator<Item = Value>) {
         for p in values {
             self.frame.push(p);
         }
     }
 
-    fn pop(&mut self) -> Option<i32> {
+    fn pop(&mut self) -> Option<Value> {
         self.frame.pop()
     }
 
-    fn pop_many(&mut self, count: usize) -> Vec<i32> {
+    fn pop_many(&mut self, count: usize) -> Vec<Value> {
         self.split_off(self.len() - count)
     }
 
-    fn top(&self) -> Option<i32> {
+    fn top(&self) -> Option<Value> {
         self.frame.last().cloned()
     }
 
-    fn split_off(&mut self, at: usize) -> Vec<i32> {
+    fn split_off(&mut self, at: usize) -> Vec<Value> {
         self.frame.split_off(at)
     }
 
@@ -392,7 +505,9 @@ impl StackFrame {
         op: &Instr,
         context: &WasmInterpreter,
         memories: &mut [WasmMemory],
-        depth: u32
+        globals: &mut [WasmGlobal],
+        tables: &mut [WasmTable],
+        depth: u32,
     ) -> Option<u32> {
         match op {
             Instr::LocalGet(idx) => {
@@ -407,14 +522,29 @@ impl StackFrame {
                 let val = self.top().unwrap();
                 self[*idx] = val;
             }
+            Instr::GlobalGet(idx) => {
+                let global = &globals[*idx as usize];
+                self.push(global.value);
+            }
+            Instr::GlobalSet(idx) => {
+                let global = &mut globals[*idx as usize];
+                if !global.mutable {
+                    panic!("may not set value of immutable global");
+                }
+                let value = self.pop().unwrap();
+                global.value = value;
+            }
             Instr::I32Const(val) => {
-                self.push(*val);
+                self.push(Value::I32(*val));
+            }
+            Instr::I64Const(val) => {
+                self.push(Value::I64(*val));
             }
             Instr::I32Load(MemArg { align, offset }) => {
                 if *align > 2 {
                     panic!("alignment may not exceed 2, got {}", align);
                 }
-                let i = self.pop().unwrap();
+                let i = self.pop().unwrap().as_i32().unwrap();
                 let ea = i as i64 + *offset as i64;
                 if ea & ((1 << *align) - 1) != 0 {
                     eprintln!(
@@ -423,14 +553,47 @@ impl StackFrame {
                     );
                 }
                 let b = memories[0].read_bytes_fixed::<4>(ea as u32);
-                self.push(i32::from_le_bytes(b));
+                self.push(Value::I32(i32::from_le_bytes(b)));
+            }
+            Instr::I32Load8U(MemArg { align, offset }) => {
+                if *align != 0 {
+                    unimplemented!();
+                }
+                let i = self.pop().unwrap().as_i32().unwrap();
+                let ea = i as i64 + *offset as i64;
+                let b = memories[0].read_byte(ea as u32);
+                self.push(Value::I32(b as i32));
+            }
+            Instr::I32Load8S(MemArg { align, offset }) => {
+                if *align != 0 {
+                    unimplemented!();
+                }
+                let i = self.pop().unwrap().as_i32().unwrap();
+                let ea = i as i64 + *offset as i64;
+                let b = memories[0].read_byte(ea as u32) as i8;
+                self.push(Value::I32(b as i32));
+            }
+            Instr::I64Load(MemArg { align, offset }) => {
+                if *align > 3 {
+                    panic!("alignment may not exceed 3, got {}", align);
+                }
+                let i = self.pop().unwrap().as_i32().unwrap();
+                let ea = i as i64 + *offset as i64;
+                if ea & ((1 << *align) - 1) != 0 {
+                    eprintln!(
+                        "WARNING: unaligned memory access: i64.load, align: {}, address: {}",
+                        align, ea
+                    );
+                }
+                let b = memories[0].read_bytes_fixed::<8>(ea as u32);
+                self.push(Value::I64(i64::from_le_bytes(b)));
             }
             Instr::I32Store(MemArg { align, offset }) => {
                 if *align > 2 {
                     panic!("alignment may not exceed 2, got {}", align);
                 }
-                let c = self.pop().unwrap();
-                let i = self.pop().unwrap();
+                let c = self.pop().unwrap().as_i32().unwrap();
+                let i = self.pop().unwrap().as_i32().unwrap();
                 let ea = i as i64 + *offset as i64;
                 if ea & ((1 << *align) - 1) != 0 {
                     eprintln!(
@@ -440,109 +603,248 @@ impl StackFrame {
                 }
                 memories[0].write_bytes_fixed::<4>(ea as u32, c.to_le_bytes());
             }
-            Instr::I32Load8U(MemArg { align, offset }) => {
-                if *align != 0 {
-                    unimplemented!();
+            Instr::I32Store8(MemArg { align, offset }) => {
+                if *align > 2 {
+                    panic!("alignment may not exceed 2, got {}", align);
                 }
-                let i = self.pop().unwrap();
+                let c = (self.pop().unwrap().as_i32().unwrap() & 0xff) as u8;
+                let i = self.pop().unwrap().as_i32().unwrap();
                 let ea = i as i64 + *offset as i64;
-                let b = memories[0].read_byte(ea as u32);
-                self.push(b as i32);
+                if ea & ((1 << *align) - 1) != 0 {
+                    eprintln!(
+                        "WARNING: unaligned memory access: i32.store8, align: {}, address: {}",
+                        align, ea
+                    );
+                }
+                memories[0].write_byte(ea as u32, c);
+            }
+            Instr::I32Store16(MemArg { align, offset }) => {
+                if *align > 2 {
+                    panic!("alignment may not exceed 2, got {}", align);
+                }
+                let c = (self.pop().unwrap().as_i32().unwrap() & 0xffff) as u16;
+                let i = self.pop().unwrap().as_i32().unwrap();
+                let ea = i as i64 + *offset as i64;
+                if ea & ((1 << *align) - 1) != 0 {
+                    eprintln!(
+                        "WARNING: unaligned memory access: i32.store16, align: {}, address: {}",
+                        align, ea
+                    );
+                }
+                memories[0].write_bytes_fixed::<2>(ea as u32, c.to_le_bytes());
+            }
+            Instr::I64Store(MemArg { align, offset }) => {
+                if *align > 3 {
+                    panic!("alignment may not exceed 3, got {}", align);
+                }
+                let c = self.pop().unwrap().as_i64().unwrap();
+                let i = self.pop().unwrap().as_i32().unwrap();
+                let ea = i as i64 + *offset as i64;
+                if ea & ((1 << *align) - 1) != 0 {
+                    eprintln!(
+                        "WARNING: unaligned memory access: i64.store, align: {}, address: {}",
+                        align, ea
+                    );
+                }
+                memories[0].write_bytes_fixed::<8>(ea as u32, c.to_le_bytes());
             }
             Instr::I32Add => {
-                let c2 = self.pop().unwrap();
-                let c1 = self.pop().unwrap();
-                self.push(c1 + c2);
+                let c2 = self.pop().unwrap().as_i32().unwrap();
+                let c1 = self.pop().unwrap().as_i32().unwrap();
+                self.push(Value::I32(c1.wrapping_add(c2)));
+            }
+            Instr::I64Add => {
+                let c2 = self.pop().unwrap().as_i64().unwrap();
+                let c1 = self.pop().unwrap().as_i64().unwrap();
+                self.push(Value::I64(c1.wrapping_add(c2)));
             }
             Instr::I32Sub => {
-                let c2 = self.pop().unwrap();
-                let c1 = self.pop().unwrap();
-                self.push(c1 - c2);
+                let c2 = self.pop().unwrap().as_i32().unwrap();
+                let c1 = self.pop().unwrap().as_i32().unwrap();
+                self.push(Value::I32(c1.wrapping_sub(c2)));
+            }
+            Instr::I64Sub => {
+                let c2 = self.pop().unwrap().as_i64().unwrap();
+                let c1 = self.pop().unwrap().as_i64().unwrap();
+                self.push(Value::I64(c1.wrapping_sub(c2)));
             }
             Instr::I32Mul => {
-                let c2 = self.pop().unwrap();
-                let c1 = self.pop().unwrap();
-                self.push(c1 * c2);
+                let c2 = self.pop().unwrap().as_i32().unwrap();
+                let c1 = self.pop().unwrap().as_i32().unwrap();
+                self.push(Value::I32(c1.wrapping_mul(c2)));
+            }
+            Instr::I64Mul => {
+                let c2 = self.pop().unwrap().as_i64().unwrap();
+                let c1 = self.pop().unwrap().as_i64().unwrap();
+                self.push(Value::I64(c1.wrapping_mul(c2)));
             }
             Instr::I32Eqz => {
-                let c1 = self.pop().unwrap() as u32;
+                let c1 = self.pop().unwrap().as_i32().unwrap() as u32;
                 let c = if c1 == 0 { 1 } else { 0 };
-                self.push(c);
+                self.push(Value::I32(c));
             }
             Instr::I32Eq => {
-                let c2 = self.pop().unwrap() as u32;
-                let c1 = self.pop().unwrap() as u32;
+                let c2 = self.pop().unwrap().as_i32().unwrap() as u32;
+                let c1 = self.pop().unwrap().as_i32().unwrap() as u32;
                 let c = if c1 == c2 { 1 } else { 0 };
-                self.push(c);
+                self.push(Value::I32(c));
             }
             Instr::I32Ne => {
-                let c2 = self.pop().unwrap() as u32;
-                let c1 = self.pop().unwrap() as u32;
+                let c2 = self.pop().unwrap().as_i32().unwrap() as u32;
+                let c1 = self.pop().unwrap().as_i32().unwrap() as u32;
                 let c = if c1 != c2 { 1 } else { 0 };
-                self.push(c);
+                self.push(Value::I32(c));
             }
             Instr::I32GtU => {
-                let c2 = self.pop().unwrap() as u32;
-                let c1 = self.pop().unwrap() as u32;
+                let c2 = self.pop().unwrap().as_i32().unwrap() as u32;
+                let c1 = self.pop().unwrap().as_i32().unwrap() as u32;
                 let c = if c1 > c2 { 1 } else { 0 };
-                self.push(c);
+                self.push(Value::I32(c));
+            }
+            Instr::I32GtS => {
+                let c2 = self.pop().unwrap().as_i32().unwrap();
+                let c1 = self.pop().unwrap().as_i32().unwrap();
+                let c = if c1 > c2 { 1 } else { 0 };
+                self.push(Value::I32(c));
             }
             Instr::I32GeU => {
-                let c2 = self.pop().unwrap() as u32;
-                let c1 = self.pop().unwrap() as u32;
+                let c2 = self.pop().unwrap().as_i32().unwrap() as u32;
+                let c1 = self.pop().unwrap().as_i32().unwrap() as u32;
                 let c = if c1 >= c2 { 1 } else { 0 };
-                self.push(c);
+                self.push(Value::I32(c));
             }
             Instr::I32LtU => {
-                let c2 = self.pop().unwrap() as u32;
-                let c1 = self.pop().unwrap() as u32;
+                let c2 = self.pop().unwrap().as_i32().unwrap() as u32;
+                let c1 = self.pop().unwrap().as_i32().unwrap() as u32;
                 let c = if c1 < c2 { 1 } else { 0 };
-                self.push(c);
+                self.push(Value::I32(c));
+            }
+            Instr::I32LtS => {
+                let c2 = self.pop().unwrap().as_i32().unwrap();
+                let c1 = self.pop().unwrap().as_i32().unwrap();
+                let c = if c1 < c2 { 1 } else { 0 };
+                self.push(Value::I32(c));
             }
             Instr::I32LeU => {
-                let c2 = self.pop().unwrap() as u32;
-                let c1 = self.pop().unwrap() as u32;
+                let c2 = self.pop().unwrap().as_i32().unwrap() as u32;
+                let c1 = self.pop().unwrap().as_i32().unwrap() as u32;
                 let c = if c1 <= c2 { 1 } else { 0 };
-                self.push(c);
+                self.push(Value::I32(c));
+            }
+            Instr::I32LeS => {
+                let c2 = self.pop().unwrap().as_i32().unwrap();
+                let c1 = self.pop().unwrap().as_i32().unwrap();
+                let c = if c1 <= c2 { 1 } else { 0 };
+                self.push(Value::I32(c));
             }
             Instr::I32And => {
-                let c2 = self.pop().unwrap();
-                let c1 = self.pop().unwrap();
+                let c2 = self.pop().unwrap().as_i32().unwrap();
+                let c1 = self.pop().unwrap().as_i32().unwrap();
                 let c = c1 & c2;
-                self.push(c);
+                self.push(Value::I32(c));
+            }
+            Instr::I64And => {
+                let c2 = self.pop().unwrap().as_i64().unwrap();
+                let c1 = self.pop().unwrap().as_i64().unwrap();
+                let c = c1 & c2;
+                self.push(Value::I64(c));
             }
             Instr::I32Or => {
-                let c2 = self.pop().unwrap();
-                let c1 = self.pop().unwrap();
+                let c2 = self.pop().unwrap().as_i32().unwrap();
+                let c1 = self.pop().unwrap().as_i32().unwrap();
                 let c = c1 | c2;
-                self.push(c);
+                self.push(Value::I32(c));
+            }
+            Instr::I64Or => {
+                let c2 = self.pop().unwrap().as_i64().unwrap();
+                let c1 = self.pop().unwrap().as_i64().unwrap();
+                let c = c1 | c2;
+                self.push(Value::I64(c));
             }
             Instr::I32Xor => {
-                let c2 = self.pop().unwrap();
-                let c1 = self.pop().unwrap();
+                let c2 = self.pop().unwrap().as_i32().unwrap();
+                let c1 = self.pop().unwrap().as_i32().unwrap();
                 let c = c1 ^ c2;
-                self.push(c);
+                self.push(Value::I32(c));
+            }
+            Instr::I64Xor => {
+                let c2 = self.pop().unwrap().as_i64().unwrap();
+                let c1 = self.pop().unwrap().as_i64().unwrap();
+                let c = c1 ^ c2;
+                self.push(Value::I64(c));
             }
             Instr::I32ShrU => {
-                let c2 = self.pop().unwrap() as u32;
-                let c1 = self.pop().unwrap() as u32;
-                let c = c1 >> c2;
-                self.push(c as i32);
+                let c2 = self.pop().unwrap().as_i32().unwrap() as u32;
+                let c1 = self.pop().unwrap().as_i32().unwrap() as u32;
+                let c = c1 >> (c2 & 31);
+                self.push(Value::I32(c as i32));
+            }
+            Instr::I64ShrU => {
+                let c2 = self.pop().unwrap().as_i64().unwrap() as u64;
+                let c1 = self.pop().unwrap().as_i64().unwrap() as u64;
+                let c = c1 >> (c2 & 63);
+                self.push(Value::I64(c as i64));
             }
             Instr::I32Shl => {
-                let c2 = self.pop().unwrap();
-                let c1 = self.pop().unwrap();
-                let c = c1 << c2;
-                self.push(c);
+                let c2 = self.pop().unwrap().as_i32().unwrap();
+                let c1 = self.pop().unwrap().as_i32().unwrap();
+                let c = c1 << (c2 & 31);
+                self.push(Value::I32(c));
+            }
+            Instr::I64Shl => {
+                let c2 = self.pop().unwrap().as_i64().unwrap();
+                let c1 = self.pop().unwrap().as_i64().unwrap();
+                let c = c1 << (c2 & 63);
+                self.push(Value::I64(c));
+            }
+            Instr::I32Rotl => {
+                let c2 = self.pop().unwrap().as_i32().unwrap();
+                let c1 = self.pop().unwrap().as_i32().unwrap();
+                let c = c1.rotate_left(c2 as u32 & 31);
+                self.push(Value::I32(c));
+            }
+            Instr::I32Clz => {
+                let c1 = self.pop().unwrap().as_i32().unwrap();
+                let c = c1.leading_zeros() as i32;
+                self.push(Value::I32(c));
+            }
+            Instr::I32Ctz => {
+                let c1 = self.pop().unwrap().as_i32().unwrap();
+                let c = c1.trailing_zeros() as i32;
+                self.push(Value::I32(c));
+            }
+            Instr::I32Extend8S => {
+                let c1 = self.pop().unwrap().as_i32().unwrap() as i8;
+                let c2 = c1 as i32;
+                self.push(Value::I32(c2));
+            }
+            Instr::I64ExtendI32U => {
+                let c1 = self.pop().unwrap().as_i32().unwrap() as u32;
+                let c2 = c1 as i64;
+                self.push(Value::I64(c2));
+            }
+            Instr::I32WrapI64 => {
+                let c1 = self.pop().unwrap().as_i64().unwrap();
+                let c2 = c1 as i32;
+                self.push(Value::I32(c2));
             }
             Instr::Branch(l_idx) => {
                 return Some(*l_idx);
             }
             Instr::BranchIf(l_idx) => {
-                let c = self.pop().unwrap();
+                let c = self.pop().unwrap().as_i32().unwrap();
                 if c != 0 {
                     return Some(*l_idx);
                 }
+            }
+            Instr::BranchTable(labels, default_label) => {
+                let case = self.pop().unwrap().as_i32().unwrap();
+                let label = if case < 0 || case as usize >= labels.len() {
+                    *default_label
+                } else {
+                    labels[case as usize]
+                };
+                return Some(label);
             }
             Instr::Return => {
                 return Some(depth);
@@ -551,7 +853,7 @@ impl StackFrame {
                 self.pop().unwrap();
             }
             Instr::Select => {
-                let c = self.pop().unwrap();
+                let c = self.pop().unwrap().as_i32().unwrap();
                 let val2 = self.pop().unwrap();
                 let val1 = self.pop().unwrap();
                 if c != 0 {
@@ -569,7 +871,7 @@ impl StackFrame {
 
                 let frame_size = self.frame.len();
                 for op in instructions.iter() {
-                    if let Some(l_idx) = self.run_instruction(op, context, memories, depth + 1) {
+                    if let Some(l_idx) = self.run_instruction(op, context, memories, globals, tables, depth + 1) {
                         if l_idx != 0 {
                             return Some(l_idx - 1);
                         }
@@ -582,6 +884,33 @@ impl StackFrame {
                 let result = self.pop_many(n);
                 self.split_off(frame_size);
                 self.push_all(result);
+            }
+            Instr::Loop(block_type, instructions) => {
+                let n = match block_type {
+                    BlockType::Void => 0,
+                    BlockType::ValType(t) => unimplemented!("{:?}", t),
+                    BlockType::NewType(t) => unimplemented!("{}", t),
+                };
+
+                let frame_size = self.frame.len();
+                loop {
+                    let mut should_loop = false;
+                    for op in instructions.iter() {
+                        if let Some(l_idx) = self.run_instruction(op, context, memories, globals, tables, depth + 1) {
+                            if l_idx != 0 {
+                                return Some(l_idx - 1);
+                            }
+                            let result = self.pop_many(n);
+                            self.split_off(frame_size);
+                            self.push_all(result);
+                            should_loop = true;
+                            break;
+                        }
+                    }
+                    if !should_loop {
+                        break;
+                    }
+                }
             }
             Instr::Call(f_idx) => {
                 if (*f_idx as usize) < context.imports.len() {
@@ -606,7 +935,8 @@ impl StackFrame {
                     self.push_all(returns);
                 } else {
                     let f_idx = *f_idx as usize;
-                    let t_idx = context.wasm.function_section.as_ref().unwrap().type_ids[f_idx] as usize;
+                    let t_idx =
+                        context.wasm.function_section.as_ref().unwrap().type_ids[f_idx] as usize;
                     let func = context
                         .wasm
                         .type_section
@@ -622,7 +952,7 @@ impl StackFrame {
 
                     let params = self.pop_many(func.params.0.len());
                     let returns =
-                        context.run_code(locals, &expr.0, params, func.returns.0.len(), memories);
+                        context.run_code(locals, &expr.0, params, func.returns.0.len(), memories, globals, tables);
                     if returns.len() != func.returns.0.len() {
                         panic!(
                             "wrong number of return values, expected: {}, got: {}",
@@ -633,14 +963,45 @@ impl StackFrame {
                     self.push_all(returns);
                 }
             }
+            Instr::CallIndirect(x, _y) => {
+                let tab = &tables[*x as usize];
+
+                let i = self.pop().unwrap().as_i32().unwrap();
+                match tab.elems[i as usize] {
+                    Ref::Null => {
+                        panic!("null dereference");
+                    }
+                    Ref::Func(a) => {
+                        let t_idx = context.wasm.function_section.as_ref().unwrap().type_ids[a as usize];
+                        let func = &context.wasm.type_section.as_ref().unwrap().functions[t_idx as usize];
+                        let (locals, expr) = &context.wasm.code_section.as_ref().unwrap().codes[a as usize - context.imports.len()].func;
+
+                        let params = self.pop_many(func.params.0.len());
+                        let returns =
+                            context.run_code(locals, &expr.0, params, func.returns.0.len(), memories, globals, tables);
+                        if returns.len() != func.returns.0.len() {
+                            panic!(
+                                "wrong number of return values, expected: {}, got: {}",
+                                func.returns.0.len(),
+                                returns.len()
+                            );
+                        }
+                        self.push_all(returns);
+                    }
+                    r => panic!("call_indirect must act on a func ref, got {:?}", r),
+                }
+            }
             Instr::MemoryGrow => {
                 let sz = (memories[0].bytes.len() / PAGE_SIZE as usize) as u32;
-                let n = self.pop().unwrap() as u32;
+                let n = self.pop().unwrap().as_i32().unwrap() as u32;
                 if memories[0].try_grow(n * PAGE_SIZE) {
-                    self.push(sz as i32);
+                    self.push(Value::I32(sz as i32));
                 } else {
-                    self.push(-1);
+                    self.push(Value::I32(-1));
                 }
+            }
+            Instr::Unreachable => {
+                panic!("entered unreachable code");
             }
             op => todo!("instr {:?} not handled yet in interpreter", op),
         }
@@ -651,7 +1012,7 @@ impl StackFrame {
 const PAGE_SIZE: u32 = 1 << 16;
 
 impl Index<u32> for StackFrame {
-    type Output = i32;
+    type Output = Value;
 
     fn index(&self, index: u32) -> &Self::Output {
         &self.frame[index as usize]

@@ -60,7 +60,7 @@ impl<'a> WasmDecoder<'a> {
     }
 
     pub fn read_vec<T>(&mut self, f: impl Fn(&mut Self) -> Result<T, DecodingError>) -> Result<Vec<T>, DecodingError> {
-        let len = self.read_byte() as usize;
+        let len = self.read_u32() as usize;
 
         let mut items = Vec::with_capacity(len);
 
