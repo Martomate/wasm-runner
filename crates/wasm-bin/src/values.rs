@@ -35,6 +35,18 @@ impl<'a> WasmDecoder<'a> {
         }
     }
 
+    pub fn read_i128(&mut self) -> i128 {
+        let b = self.read_byte();
+
+        if b & 0b_1100_0000 == 0 {
+            b as i128
+        } else if b & 0b_1000_0000 == 0 {
+            (b as i128) - 0b_1000_0000
+        } else {
+            ((b as i128) & !0b_1000_0000) | (self.read_i128() << 7)
+        }
+    }
+
     pub fn read_name(&mut self) -> Result<String, DecodingError> {
         let bytes = self.read_vec(|bytes| Ok(bytes.read_byte()))?;
         String::from_utf8(bytes).map_err(|err| format!("{}, bytes: {:?}", err.utf8_error(), err.as_bytes()).into())

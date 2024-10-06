@@ -6,13 +6,19 @@ pub struct DecodingError {
     cause: Option<Box<DecodingError>>,
 }
 
+impl DecodingError {
+    pub fn wrap(self, msg: impl Into<String>) -> Self {
+        Self { msg: msg.into(), cause: Some(Box::new(self)) }
+    }
+}
+
 pub trait DecodingErrorExt {
     fn context(self, msg: impl Into<String>) -> Self;
 }
 
 impl<T> DecodingErrorExt for Result<T, DecodingError> {
     fn context(self, msg: impl Into<String>) -> Self {
-        self.map_err(|err| DecodingError { msg: msg.into(), cause: Some(Box::new(err)) })
+        self.map_err(|err| err.wrap(msg))
     }
 }
 
