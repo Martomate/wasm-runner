@@ -5,9 +5,11 @@ use super::section::*;
 use super::types::{FuncType, NumType, RefType, TableType, ValType};
 use super::WasmFile;
 
+mod error;
 mod mem;
 mod stack;
 
+use error::{ErrorReason, InterpreterError};
 use mem::*;
 use stack::*;
 
@@ -205,7 +207,7 @@ impl WasmInterpreter {
         function_name: &str,
         parameters: Vec<&str>,
         store: &mut Store,
-    ) -> String {
+    ) -> Result<String, String> {
         let types_section = self.wasm.type_section.clone().unwrap_or(TypeSection {
             functions: Vec::new(),
         });
@@ -219,7 +221,7 @@ impl WasmInterpreter {
             });
 
         let ExportSection { exports } = self.wasm.export_section.clone().unwrap();
-        let ExportDesc::Func(exported_function_idx) = exports
+        let ExportDesc::Func(function_idx) = exports
             .iter()
             .find(|e| e.name == function_name)
             .unwrap()
@@ -227,7 +229,7 @@ impl WasmInterpreter {
         else {
             panic!("not a function");
         };
-        let exported_function_idx = exported_function_idx
+        let exported_function_idx = function_idx
             - self
                 .wasm
                 .import_section
@@ -266,12 +268,18 @@ impl WasmInterpreter {
             size: _,
         } = self.wasm.code_section.clone().unwrap().codes[exported_function_idx as usize].clone();
 
-        let res = self.run_code(&locals, &body.0, param_values, return_types.len(), store);
+        let res = self
+            .run_code(&locals, &body.0, param_values, return_types.len(), store)
+            .map_err(|e| e.wrap(ErrorReason::FailedFunction { f_idx: function_idx, name: Some(function_name.to_string()) }))
+            .map_err(|e| {
+                eprintln!("{:?}", e);
+                e.to_string()
+            })?;
 
-        res.into_iter()
+        Ok(res.into_iter()
             .map(|n| n.to_string())
             .collect::<Vec<_>>()
-            .join(", ")
+            .join(", "))
     }
 
     fn run_code(
@@ -281,7 +289,7 @@ impl WasmInterpreter {
         parameters: Vec<Value>,
         num_returns_values: usize,
         store: &mut Store,
-    ) -> Vec<Value> {
+    ) -> Result<Vec<Value>, InterpreterError> {
         let mut frame = StackFrame::new();
         frame.push_all(parameters);
         frame.push_all(
@@ -295,8 +303,11 @@ impl WasmInterpreter {
                 }),
         );
 
-        for op in body {
-            if let Some(l_idx) = frame.run_instruction(op, self, store, 0) {
+        for (i, op) in body.iter().enumerate() {
+            if let Some(l_idx) = frame
+                .run_instruction(op, self, store, 0)
+                .map_err(|e| e.wrap(ErrorReason::FailedInstruction { step: i, instr: op.clone() }))?
+            {
                 if l_idx != 0 {
                     panic!("cannot branch out of function, expected 0, got {}", l_idx);
                 }
@@ -304,6 +315,7 @@ impl WasmInterpreter {
             }
         }
 
-        frame.split_off(frame.len() - num_returns_values)
+        let returns = frame.split_off(frame.len() - num_returns_values)?;
+        Ok(returns)
     }
 }
