@@ -5,7 +5,7 @@ use std::{
 
 use crate::instr::{BlockType, Instr, MemArg};
 
-use super::{ExternalFunctionBinding, Ref, WasmGlobal, WasmInterpreter, WasmMemory, WasmTable};
+use super::{ExternalFunctionBinding, Ref, Store, WasmInterpreter};
 
 const PAGE_SIZE: u32 = 1 << 16;
 
@@ -101,11 +101,13 @@ impl StackFrame {
         &mut self,
         op: &Instr,
         context: &WasmInterpreter,
-        memories: &mut [WasmMemory],
-        globals: &mut [WasmGlobal],
-        tables: &mut [WasmTable],
+        store: &mut Store,
         depth: u32,
     ) -> Option<u32> {
+        let memories = store.memories.as_mut_slice();
+        let globals = store.globals.as_mut_slice();
+        let tables = store.tables.as_mut_slice();
+
         match op {
             Instr::LocalGet(idx) => {
                 let val = self[*idx];
@@ -469,7 +471,7 @@ impl StackFrame {
                 let frame_size = self.frame.len();
                 for op in instructions.iter() {
                     if let Some(l_idx) =
-                        self.run_instruction(op, context, memories, globals, tables, depth + 1)
+                        self.run_instruction(op, context, store, depth + 1)
                     {
                         if l_idx != 0 {
                             return Some(l_idx - 1);
@@ -496,7 +498,7 @@ impl StackFrame {
                     let mut should_loop = false;
                     for op in instructions.iter() {
                         if let Some(l_idx) =
-                            self.run_instruction(op, context, memories, globals, tables, depth + 1)
+                            self.run_instruction(op, context, store, depth + 1)
                         {
                             if l_idx != 0 {
                                 return Some(l_idx - 1);
@@ -557,9 +559,7 @@ impl StackFrame {
                         &expr.0,
                         params,
                         func.returns.0.len(),
-                        memories,
-                        globals,
-                        tables,
+                        store
                     );
                     if returns.len() != func.returns.0.len() {
                         panic!(
@@ -576,9 +576,6 @@ impl StackFrame {
 
                 let i = self.pop().unwrap().as_i32().unwrap();
                 match tab.elems[i as usize] {
-                    Ref::Null => {
-                        panic!("null dereference");
-                    }
                     Ref::Func(a) => {
                         let t_idx =
                             context.wasm.function_section.as_ref().unwrap().type_ids[a as usize];
@@ -594,9 +591,7 @@ impl StackFrame {
                             &expr.0,
                             params,
                             func.returns.0.len(),
-                            memories,
-                            globals,
-                            tables,
+                            store
                         );
                         if returns.len() != func.returns.0.len() {
                             panic!(
@@ -607,7 +602,7 @@ impl StackFrame {
                         }
                         self.push_all(returns);
                     }
-                    r => panic!("call_indirect must act on a func ref, got {:?}", r),
+                    // r => panic!("call_indirect must act on a func ref, got {:?}", r),
                 }
             }
             Instr::MemoryGrow => {

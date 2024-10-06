@@ -1,4 +1,4 @@
-use wasm_bin::{decode_bytes, run::{Value, WasmInterpreter}};
+use wasm_bin::{decode_bytes, run::{Store, Value, WasmInterpreter}};
 
 #[test]
 fn decode_add_example() {
@@ -6,8 +6,8 @@ fn decode_add_example() {
 
     let wasm = decode_bytes(example).unwrap();
 
-    let mut memories = WasmInterpreter::create_memories(&wasm);
-    let res = WasmInterpreter::new(wasm).execute("add", vec!["17", "65"], &mut memories);
+    let mut store = Store::create(&wasm);
+    let res = WasmInterpreter::new(wasm).execute("add", vec!["17", "65"], &mut store);
 
     assert_eq!(res, "82");
 }
@@ -18,12 +18,12 @@ fn decode_box_example() {
 
     let wasm = decode_bytes(example).unwrap();
 
-    let mut memories = WasmInterpreter::create_memories(&wasm);
+    let mut store = Store::create(&wasm);
     let mut interpreter = WasmInterpreter::new(wasm);
-    let res = interpreter.execute("calc", vec!["17"], &mut memories);
+    let res = interpreter.execute("calc", vec!["17"], &mut store);
 
     let ptr = res.parse::<u32>().unwrap();
-    let ans = memories[0].read_byte(ptr);
+    let ans = store.access_memory(0, |m| m.read_byte(ptr));
 
     assert_eq!(ans, 17 + 42);
 }
@@ -42,16 +42,16 @@ fn decode_log_example() {
         vec![]
     }
 
-    let mut memories = WasmInterpreter::create_memories(&wasm);
+    let mut store = Store::create(&wasm);
     let mut interpreter = WasmInterpreter::new(wasm);
     interpreter.bind_external_function("env", "console_log", console_log);
-    let res = interpreter.execute("run", vec![], &mut memories);
+    let res = interpreter.execute("run", vec![], &mut store);
 
     assert_eq!(res, "");
     assert_eq!(unsafe { LOGGED_MESSAGES.clone() }, vec![vec![Value::I32(1048576)]]); // this is a pointer into the wasm memory
 
     let message_ptr = (unsafe { LOGGED_MESSAGES.clone() }[0][0]).as_i32().unwrap() as u32;
-    let message = String::from_utf8(memories[0].read_c_string(message_ptr).to_owned()).unwrap();
+    let message = String::from_utf8(store.access_memory(0, |m| m.read_c_string(message_ptr).to_owned())).unwrap();
     assert_eq!(message, "Hello");
 }
 
@@ -61,33 +61,33 @@ fn decode_aes_example() {
 
     let wasm = decode_bytes(example).unwrap();
 
-    let mut memories = WasmInterpreter::create_memories(&wasm);
+    let mut store = Store::create(&wasm);
     let mut interpreter = WasmInterpreter::new(wasm);
 
     // Create key and data
-    let res = interpreter.execute("new_array", vec!["16"], &mut memories);
+    let res = interpreter.execute("new_array", vec!["16"], &mut store);
     let key_ptr = res.parse::<u32>().unwrap();
-    memories[0].write_bytes(key_ptr, b"1234abcd9876efgh");
+    store.access_memory(0, |m| m.write_bytes(key_ptr, b"1234abcd9876efgh"));
 
-    let res = interpreter.execute("new_array", vec!["16"], &mut memories);
+    let res = interpreter.execute("new_array", vec!["16"], &mut store);
     let data_ptr = res.parse::<u32>().unwrap();
-    memories[0].write_bytes(data_ptr, b"Hello World!");
+    store.access_memory(0, |m| m.write_bytes(data_ptr, b"Hello World!"));
 
     // Encrypt
-    let res = interpreter.execute("encrypt_128", vec![&data_ptr.to_string(), &key_ptr.to_string()], &mut memories);
+    let res = interpreter.execute("encrypt_128", vec![&data_ptr.to_string(), &key_ptr.to_string()], &mut store);
     let output_ptr = res.parse::<u32>().unwrap();
-    let output = memories[0].read_bytes_fixed::<16>(output_ptr);
+    let output = store.access_memory(0, |m| m.read_bytes_fixed::<16>(output_ptr));
 
     // Decrypt
-    let res = interpreter.execute("decrypt_128", vec![&output_ptr.to_string(), &key_ptr.to_string()], &mut memories);
+    let res = interpreter.execute("decrypt_128", vec![&output_ptr.to_string(), &key_ptr.to_string()], &mut store);
     let input_ptr = res.parse::<u32>().unwrap();
-    let input = memories[0].read_bytes_fixed::<16>(input_ptr);
+    let input = store.access_memory(0, |m| m.read_bytes_fixed::<16>(input_ptr));
 
     // Drop memory (not really needed in this case)
-    interpreter.execute("drop_array", vec![&input_ptr.to_string()], &mut memories);
-    interpreter.execute("drop_array", vec![&output_ptr.to_string()], &mut memories);
-    interpreter.execute("drop_array", vec![&data_ptr.to_string()], &mut memories);
-    interpreter.execute("drop_array", vec![&key_ptr.to_string()], &mut memories);
+    interpreter.execute("drop_array", vec![&input_ptr.to_string()], &mut store);
+    interpreter.execute("drop_array", vec![&output_ptr.to_string()], &mut store);
+    interpreter.execute("drop_array", vec![&data_ptr.to_string()], &mut store);
+    interpreter.execute("drop_array", vec![&key_ptr.to_string()], &mut store);
 
     // encryption followed by decryption should produce the input
     assert_eq!(&input, b"Hello World!\0\0\0\0");

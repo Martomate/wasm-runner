@@ -74,7 +74,7 @@ impl<'a> Arena<'a> {
         ptr
     }
 
-    pub fn access<T>(&mut self, ptr: *mut u8, m: impl Fn(&mut [u8]) -> T) -> T {
+    pub fn access<T>(&mut self, ptr: *mut u8, m: impl FnOnce(&mut [u8]) -> T) -> T {
         let pos = self
             .arrays
             .iter_mut()
