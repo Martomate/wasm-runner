@@ -254,10 +254,15 @@ impl WasmInterpreter {
             .iter()
             .zip(parameters.iter())
             .map(|(t, s)| {
-                if *t != ValType::Num(NumType::I32) {
-                    panic!("only i32 parameters are supported at this point");
+                match t {
+                    ValType::Num(t) => match t {
+                        NumType::I32 => Value::I32(s.parse::<i32>().unwrap()),
+                        NumType::I64 => Value::I64(s.parse::<i64>().unwrap()),
+                        NumType::F32 => Value::F32(s.parse::<f32>().unwrap()),
+                        NumType::F64 => Value::F64(s.parse::<f64>().unwrap()),
+                    },
+                    t => panic!("parameters of kind {:?} are not supported yet", t),
                 }
-                Value::I32(s.parse::<i32>().unwrap())
             })
             .collect();
 

@@ -1,7 +1,7 @@
 use wasm_bin::{decode_bytes, run::{Store, Value, WasmInterpreter}};
 
 #[test]
-fn decode_add_example() {
+fn add_example() {
     let example = include_bytes!("add.wasm");
 
     let wasm = decode_bytes(example).unwrap();
@@ -13,7 +13,7 @@ fn decode_add_example() {
 }
 
 #[test]
-fn decode_box_example() {
+fn box_example() {
     let example = include_bytes!("box.wasm");
 
     let wasm = decode_bytes(example).unwrap();
@@ -29,7 +29,7 @@ fn decode_box_example() {
 }
 
 #[test]
-fn decode_log_example() {
+fn log_example() {
     let example = include_bytes!("log.wasm");
 
     let wasm = decode_bytes(example).unwrap();
@@ -56,7 +56,7 @@ fn decode_log_example() {
 }
 
 #[test]
-fn decode_aes_example() {
+fn aes_example() {
     let example = include_bytes!("aes.wasm");
 
     let wasm = decode_bytes(example).unwrap();
@@ -94,4 +94,19 @@ fn decode_aes_example() {
 
     // the ciphertext should be different from the plaintext
     assert_ne!(&output, &input);
+}
+
+#[test]
+fn floats_example() {
+    let example = include_bytes!("floats.wasm");
+
+    let wasm = decode_bytes(example).unwrap();
+    let mut store = Store::create(&wasm);
+    let mut program = WasmInterpreter::new(wasm);
+    
+    let res = program.execute("add_f32", vec!["17.123", "65.472"], &mut store).unwrap();
+    assert_eq!(res, "82.595");
+
+    let res = program.execute("add_f64", vec!["17.123", "65.472"], &mut store).unwrap();
+    assert_eq!(res, "82.595");
 }

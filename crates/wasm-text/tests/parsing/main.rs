@@ -86,3 +86,10 @@ fn parse_aes_example() {
 
     wasm_text::parse_str(input).unwrap();
 }
+
+#[test]
+fn parse_floats_example() {
+    let input = include_str!("floats.wat");
+
+    wasm_text::parse_str(input).unwrap();
+}

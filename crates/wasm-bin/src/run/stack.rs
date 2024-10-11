@@ -12,10 +12,12 @@ use super::{
 
 const PAGE_SIZE: u32 = 1 << 16;
 
-#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+#[derive(Debug, PartialEq, Clone, Copy)]
 pub enum Value {
     I32(i32),
     I64(i64),
+    F32(f32),
+    F64(f64),
 }
 
 impl Value {
@@ -23,6 +25,8 @@ impl Value {
         match self {
             Value::I32(_) => "i32",
             Value::I64(_) => "i64",
+            Value::F32(_) => "f32",
+            Value::F64(_) => "f64",
         }
     }
 
@@ -47,6 +51,28 @@ impl Value {
             })
         }
     }
+
+    pub fn as_f32(self) -> Result<f32, StackError> {
+        if let Value::F32(v) = self {
+            Ok(v)
+        } else {
+            Err(StackError::WrongValueType {
+                actual: self.type_name(),
+                expected: "f32",
+            })
+        }
+    }
+
+    pub fn as_f64(self) -> Result<f64, StackError> {
+        if let Value::F64(v) = self {
+            Ok(v)
+        } else {
+            Err(StackError::WrongValueType {
+                actual: self.type_name(),
+                expected: "f64",
+            })
+        }
+    }
 }
 
 impl Display for Value {
@@ -54,6 +80,8 @@ impl Display for Value {
         match self {
             Value::I32(v) => write!(f, "{}", v),
             Value::I64(v) => write!(f, "{}", v),
+            Value::F32(v) => write!(f, "{}", v),
+            Value::F64(v) => write!(f, "{}", v),
         }
     }
 }
@@ -290,6 +318,16 @@ impl StackFrame {
                 let c2 = self.pop()?.as_i64()?;
                 let c1 = self.pop()?.as_i64()?;
                 self.push(Value::I64(c1.wrapping_add(c2)));
+            }
+            Instr::F32Add => {
+                let c2 = self.pop()?.as_f32()?;
+                let c1 = self.pop()?.as_f32()?;
+                self.push(Value::F32(c1 + c2));
+            }
+            Instr::F64Add => {
+                let c2 = self.pop()?.as_f64()?;
+                let c1 = self.pop()?.as_f64()?;
+                self.push(Value::F64(c1 + c2));
             }
             Instr::I32Sub => {
                 let c2 = self.pop()?.as_i32()?;

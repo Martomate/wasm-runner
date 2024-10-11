@@ -19,6 +19,10 @@ name = "box"
 crate-type = ["cdylib"]
 
 [[example]]
+name = "floats"
+crate-type = ["cdylib"]
+
+[[example]]
 name = "hello"
 crate-type = ["cdylib"]
 
