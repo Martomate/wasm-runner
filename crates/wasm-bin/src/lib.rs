@@ -38,7 +38,7 @@ pub fn decode_bytes(mut b: &[u8]) -> Result<WasmFile, String> {
     Ok(wasm_file)
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq)]
 pub struct WasmFile {
     pub custom_sections: Vec<CustomSection>,
     pub type_section: Option<TypeSection>,

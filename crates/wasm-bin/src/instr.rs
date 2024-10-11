@@ -2,7 +2,7 @@ use crate::decoder::WasmDecoder;
 use crate::error::DecodingError;
 use crate::types::{RefType, ValType};
 
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct Expr(pub Vec<Instr>);
 
 #[derive(Debug, PartialEq, Eq, Clone)]
@@ -18,7 +18,7 @@ pub enum BlockType {
     NewType(u64),
 }
 
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum Instr {
     Unreachable,
     Nop,
@@ -51,6 +51,8 @@ pub enum Instr {
 
     I32Const(i32),
     I64Const(i64),
+    F32Const(f32),
+    F64Const(f64),
 
     I32Eqz,
     I32Eq,
@@ -694,8 +696,8 @@ impl<'a> WasmDecoder<'a> {
             }
             0x41 => Instr::I32Const(self.read_i32()),
             0x42 => Instr::I64Const(self.read_i64()),
-            0x43 => unsupported("f32.const")?,
-            0x44 => unsupported("f64.const")?,
+            0x43 => Instr::F32Const(self.read_f32()),
+            0x44 => Instr::F64Const(self.read_f64()),
             0x45 => Instr::I32Eqz,
             0x46 => Instr::I32Eq,
             0x47 => Instr::I32Ne,

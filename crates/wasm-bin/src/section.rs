@@ -32,31 +32,31 @@ pub enum ExportDesc {
     Global(u32),
 }
 
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct Code {
     pub size: u32,
     pub func: (Vec<Locals>, Expr),
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq)]
 pub struct Data {
     pub init: Vec<u8>,
     pub mode: DataMode,
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq)]
 pub enum DataMode {
     Passive,
     Active { memory: u32, offset: Expr },
 }
 
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum ElementInit {
     Implicit(Vec<u32>),
     Explicit(Vec<Expr>),
 }
 
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum ElementMode {
     Passive,
     Active { table: u32, offset: Expr },
@@ -69,7 +69,7 @@ pub struct Locals {
     pub t: ValType,
 }
 
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct Element {
     pub t: RefType,
     pub init: ElementInit,
@@ -266,7 +266,7 @@ impl<'a> WasmDecoder<'a> {
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq)]
 pub enum Section {
     Custom(CustomSection),
     Type(TypeSection),
@@ -525,7 +525,7 @@ impl SectionDecoder for MemorySection {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct GlobalSection {
     pub globals: Vec<(GlobalType, Expr)>,
 }
@@ -568,7 +568,7 @@ impl SectionDecoder for StartSection {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct ElementSection {
     pub elements: Vec<Element>,
 }
@@ -581,7 +581,7 @@ impl SectionDecoder for ElementSection {
     }
 }
 
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct CodeSection {
     pub codes: Vec<Code>,
 }
@@ -594,7 +594,7 @@ impl SectionDecoder for CodeSection {
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq)]
 pub struct DataSection {
     pub datas: Vec<Data>,
 }

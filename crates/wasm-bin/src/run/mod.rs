@@ -224,7 +224,7 @@ impl WasmInterpreter {
         let ExportDesc::Func(function_idx) = exports
             .iter()
             .find(|e| e.name == function_name)
-            .unwrap()
+            .ok_or("unknown function")?
             .desc
         else {
             panic!("not a function");
@@ -302,8 +302,12 @@ impl WasmInterpreter {
                 .iter()
                 .flat_map(|l| iter::repeat(l.t.clone()).take(l.n as usize))
                 .map(|t| match t {
-                    ValType::Num(NumType::I32) => Value::I32(0),
-                    ValType::Num(NumType::I64) => Value::I64(0),
+                    ValType::Num(t) => match t {
+                        NumType::I32 => Value::I32(0),
+                        NumType::I64 => Value::I64(0),
+                        NumType::F32 => Value::F32(0.0),
+                        NumType::F64 => Value::F64(0.0),
+                    },
                     t => todo!("{:?}", t),
                 }),
         );

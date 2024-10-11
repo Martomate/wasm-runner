@@ -47,6 +47,16 @@ impl<'a> WasmDecoder<'a> {
         }
     }
 
+    pub fn read_f32(&mut self) -> f32 {
+        let bytes = self.read_bytes(4);
+        f32::from_le_bytes(<[u8; 4]>::try_from(bytes).unwrap())
+    }
+
+    pub fn read_f64(&mut self) -> f64 {
+        let bytes = self.read_bytes(8);
+        f64::from_le_bytes(<[u8; 8]>::try_from(bytes).unwrap())
+    }
+
     pub fn read_name(&mut self) -> Result<String, DecodingError> {
         let bytes = self.read_vec(|bytes| Ok(bytes.read_byte()))?;
         String::from_utf8(bytes).map_err(|err| format!("{}, bytes: {:?}", err.utf8_error(), err.as_bytes()).into())

@@ -109,4 +109,7 @@ fn floats_example() {
 
     let res = program.execute("add_f64", vec!["17.123", "65.472"], &mut store).unwrap();
     assert_eq!(res, "82.595");
+
+    let res = program.execute("sinh", vec!["1.23"], &mut store).unwrap();
+    assert_eq!(res, "1.564468479304407");
 }
