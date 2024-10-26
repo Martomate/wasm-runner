@@ -1,0 +1,14 @@
+{
+	"folders": [
+		{
+			"path": "..",
+			"name": "Runner",
+			"watcherExclude": ["../programs"]
+		},
+		{
+			"path": "../programs",
+			"name": "Programs"
+		}
+	],
+	"settings": {}
+}

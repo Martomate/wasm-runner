@@ -1,5 +1,7 @@
 use std::iter;
 
+use crate::types::VecType;
+
 use super::instr::Instr;
 use super::section::*;
 use super::types::{FuncType, NumType, RefType, TableType, ValType};
@@ -308,6 +310,9 @@ impl WasmInterpreter {
                         NumType::F32 => Value::F32(0.0),
                         NumType::F64 => Value::F64(0.0),
                     },
+                    ValType::Vec(t) => match t {
+                        VecType::V128 => Value::V128(0),
+                    }
                     t => todo!("{:?}", t),
                 }),
         );

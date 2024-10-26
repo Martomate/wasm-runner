@@ -93,3 +93,10 @@ fn parse_floats_example() {
 
     wasm_text::parse_str(input).unwrap();
 }
+
+#[test]
+fn parse_simd_example() {
+    let input = include_str!("simd.wat");
+
+    wasm_text::parse_str(input).unwrap();
+}

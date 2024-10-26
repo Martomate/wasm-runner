@@ -552,11 +552,8 @@ fn unsupported<T>(name: &str) -> Result<T, DecodingError> {
 
 impl<'a> WasmDecoder<'a> {
     pub fn read_expr(&mut self) -> Result<Expr, DecodingError> {
-        let mut instructions = Vec::new();
-        while self.peek_byte() != 0x0B {
-            instructions.push(self.read_instr()?);
-        }
-        self.read_byte(); // skip the 0x0B byte (end marker)
+        let instructions = self.read_until(|bytes| bytes.read_instr(), |b| b == 0x0B)?;
+        self.discard_byte(0x0B)?;
         Ok(Expr(instructions))
     }
 
@@ -575,7 +572,6 @@ impl<'a> WasmDecoder<'a> {
             .map(BlockType::ValType)
             .or_else(|_| {
                 let x = self.read_i64();
-                println!("x: {}", x);
                 if x >= 0 {
                     Ok(BlockType::NewType(x as u64))
                 } else {
@@ -1008,7 +1004,7 @@ impl<'a> WasmDecoder<'a> {
             0x09 => Instr::V128Load32Splat(self.read_memarg()?),
             0x0A => Instr::V128Load64Splat(self.read_memarg()?),
             0x0B => Instr::V128Store(self.read_memarg()?),
-            0x0C => Instr::V128Const(self.read_i128()),
+            0x0C => Instr::V128Const(i128::from_le_bytes(<[u8; 16]>::try_from(self.read_bytes(16)).unwrap())),
             0x0D => Instr::I8x16Shuffle(<[u8; 16]>::try_from(self.read_bytes(16)).unwrap()),
             0x0E => Instr::I8x16Swizzle,
             0x0F => Instr::I8x16Splat,

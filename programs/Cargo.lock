@@ -3,9 +3,5 @@
 version = 3
 
 [[package]]
-name = "wasm_bin"
-version = "0.1.0"
-
-[[package]]
-name = "wasm_text"
+name = "programs"
 version = "0.1.0"

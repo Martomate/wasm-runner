@@ -3,6 +3,11 @@ name = "programs"
 version = "0.1.0"
 edition = "2021"
 
+[profile.wasm]
+inherits = "release"
+lto = "fat"
+opt-level = "s"
+
 [lib]
 crate-type = ["rlib"]
 
@@ -30,3 +35,6 @@ crate-type = ["cdylib"]
 name = "log"
 crate-type = ["cdylib"]
 
+[[example]]
+name = "simd"
+crate-type = ["cdylib"]

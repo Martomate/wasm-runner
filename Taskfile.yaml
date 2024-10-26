@@ -2,9 +2,11 @@ version: '3'
 
 tasks:
   build-wasm:
+    dir: programs
     vars:
       OUT_PATH: "./target/wasm32-unknown-unknown/wasm/examples"
 
     cmds:
+      - cargo test
       - cargo build --profile wasm --examples --target wasm32-unknown-unknown
       - ls -l {{ .OUT_PATH }}

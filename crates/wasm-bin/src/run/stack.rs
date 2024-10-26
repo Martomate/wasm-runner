@@ -18,6 +18,7 @@ pub enum Value {
     I64(i64),
     F32(f32),
     F64(f64),
+    V128(i128),
 }
 
 impl Value {
@@ -27,6 +28,7 @@ impl Value {
             Value::I64(_) => "i64",
             Value::F32(_) => "f32",
             Value::F64(_) => "f64",
+            Value::V128(_) => "v128",
         }
     }
 
@@ -73,6 +75,17 @@ impl Value {
             })
         }
     }
+
+    pub fn as_v128(self) -> Result<i128, StackError> {
+        if let Value::V128(v) = self {
+            Ok(v)
+        } else {
+            Err(StackError::WrongValueType {
+                actual: self.type_name(),
+                expected: "v128",
+            })
+        }
+    }
 }
 
 impl Display for Value {
@@ -82,6 +95,7 @@ impl Display for Value {
             Value::I64(v) => write!(f, "{}", v),
             Value::F32(v) => write!(f, "{}", v),
             Value::F64(v) => write!(f, "{}", v),
+            Value::V128(v) => write!(f, "{}", v),
         }
     }
 }
@@ -206,6 +220,9 @@ impl StackFrame {
             }
             Instr::F64Const(val) => {
                 self.push(Value::F64(*val));
+            }
+            Instr::V128Const(val) => {
+                self.push(Value::V128(*val));
             }
             Instr::I32Load(MemArg { align, offset }) => {
                 if *align > 2 {
@@ -674,6 +691,141 @@ impl StackFrame {
                 let c1 = self.pop()?.as_i64()? as u64;
                 let c = f64::from_bits(c1);
                 self.push(Value::F64(c));
+            }
+            Instr::I32x4ExtractLane(x) => {
+                assert!(*x < 4);
+                let c1 = self.pop()?.as_v128()?;
+                let c1 = c1.to_le_bytes();
+
+                let x = *x as usize;
+                let c2 = <[u8; 4]>::try_from(&c1[(x * 4)..(x * 4 + 4)]).unwrap();
+                let c2 = i32::from_le_bytes(c2);
+
+                self.push(Value::I32(c2));
+            }
+            Instr::I32x4ReplaceLane(x) => {
+                assert!(*x < 4);
+                let c2 = self.pop()?.as_i32()?;
+                let c1 = self.pop()?.as_v128()?;
+
+                let x = *x as usize;
+                let mut c = c1.to_le_bytes();
+                c[(x * 4)..(x * 4 + 4)].copy_from_slice(&c2.to_le_bytes());
+                let c = i128::from_le_bytes(c);
+
+                self.push(Value::V128(c));
+            }
+            Instr::I8x16Shuffle(xs) => {
+                for x in xs {
+                    assert!(*x < 32);
+                }
+                let c2 = self.pop()?.as_v128()?;
+                let c1 = self.pop()?.as_v128()?;
+
+                let c2 = c2.to_le_bytes();
+                let c1 = c1.to_le_bytes();
+
+                let mut c: [u8; 16] = [0; 16];
+                for i in 0..16 {
+                    let x = xs[i] as usize;
+                    if x < 16 {
+                        c[i] = c1[x];
+                    } else {
+                        c[i] = c2[x - 16];
+                    }
+                }
+                let c = i128::from_le_bytes(c);
+
+                self.push(Value::V128(c));
+            }
+            Instr::I32x4MinU => {
+                let c2 = self.pop()?.as_v128()?;
+                let c1 = self.pop()?.as_v128()?;
+
+                let c2 = c2.to_le_bytes();
+                let c1 = c1.to_le_bytes();
+
+                let mut c: [u8; 16] = [0; 16];
+                for i in 0..4 {
+                    let idx = i * 4;
+                    let n2 = u32::from_le_bytes(<[u8; 4]>::try_from(&c2[idx..idx + 4]).unwrap());
+                    let n1 = u32::from_le_bytes(<[u8; 4]>::try_from(&c1[idx..idx + 4]).unwrap());
+
+                    let n = n1.min(n2);
+
+                    c[idx..idx + 4].copy_from_slice(&n.to_le_bytes());
+                }
+                let c = i128::from_le_bytes(c);
+
+                self.push(Value::V128(c));
+            }
+            Instr::I32x4Add => {
+                let c2 = self.pop()?.as_v128()?;
+                let c1 = self.pop()?.as_v128()?;
+
+                let c2 = c2.to_le_bytes();
+                let c1 = c1.to_le_bytes();
+
+                let mut c: [u8; 16] = [0; 16];
+                for i in 0..4 {
+                    let idx = i * 4;
+                    let n2 = i32::from_le_bytes(<[u8; 4]>::try_from(&c2[idx..idx + 4]).unwrap());
+                    let n1 = i32::from_le_bytes(<[u8; 4]>::try_from(&c1[idx..idx + 4]).unwrap());
+
+                    let n = n1.wrapping_add(n2);
+
+                    c[idx..idx + 4].copy_from_slice(&n.to_le_bytes());
+                }
+                let c = i128::from_le_bytes(c);
+
+                self.push(Value::V128(c));
+            }
+            Instr::I32x4Sub => {
+                let c2 = self.pop()?.as_v128()?;
+                let c1 = self.pop()?.as_v128()?;
+
+                let c2 = c2.to_le_bytes();
+                let c1 = c1.to_le_bytes();
+
+                let mut c: [u8; 16] = [0; 16];
+                for i in 0..4 {
+                    let idx = i * 4;
+                    let n2 = i32::from_le_bytes(<[u8; 4]>::try_from(&c2[idx..idx + 4]).unwrap());
+                    let n1 = i32::from_le_bytes(<[u8; 4]>::try_from(&c1[idx..idx + 4]).unwrap());
+
+                    let n = n1.wrapping_sub(n2);
+
+                    c[idx..idx + 4].copy_from_slice(&n.to_le_bytes());
+                }
+                let c = i128::from_le_bytes(c);
+
+                self.push(Value::V128(c));
+            }
+            Instr::I32x4Mul => {
+                let c2 = self.pop()?.as_v128()?;
+                let c1 = self.pop()?.as_v128()?;
+
+                let c2 = c2.to_le_bytes();
+                let c1 = c1.to_le_bytes();
+
+                let mut c: [u8; 16] = [0; 16];
+                for i in 0..4 {
+                    let idx = i * 4;
+                    let n2 = i32::from_le_bytes(<[u8; 4]>::try_from(&c2[idx..idx + 4]).unwrap());
+                    let n1 = i32::from_le_bytes(<[u8; 4]>::try_from(&c1[idx..idx + 4]).unwrap());
+
+                    let n = n1.wrapping_mul(n2);
+
+                    c[idx..idx + 4].copy_from_slice(&n.to_le_bytes());
+                }
+                let c = i128::from_le_bytes(c);
+
+                self.push(Value::V128(c));
+            }
+            Instr::V128Not => {
+                let c1 = self.pop()?.as_v128()?;
+                let c = !c1;
+                self.push(Value::V128(c));
             }
             Instr::Branch(l_idx) => {
                 return Ok(Some(*l_idx));
