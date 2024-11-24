@@ -6,6 +6,7 @@ mod values;
 
 use error::DecodingError;
 use section::*;
+use types::FuncType;
 
 pub struct WasmDecoder<'a>(&'a [u8]);
 
@@ -15,7 +16,10 @@ impl<'a> WasmDecoder<'a> {
     }
 
     /// Runs the given function and only advances the buffer if no error occurred
-    pub fn attempt<T>(&mut self, f: impl FnOnce(&mut Self) -> Result<T, DecodingError>) -> Result<T, DecodingError> {
+    pub fn attempt<T>(
+        &mut self,
+        f: impl FnOnce(&mut Self) -> Result<T, DecodingError>,
+    ) -> Result<T, DecodingError> {
         let mut bytes = Self::new(self.0);
         let res = f(&mut bytes);
         if res.is_ok() {
@@ -48,12 +52,20 @@ impl<'a> WasmDecoder<'a> {
         res
     }
 
-    pub fn ensuring_size<T>(&mut self, expected_size: u32, f: impl FnOnce(&mut Self) -> Result<T, DecodingError>) -> Result<T, DecodingError> {
+    pub fn ensuring_size<T>(
+        &mut self,
+        expected_size: u32,
+        f: impl FnOnce(&mut Self) -> Result<T, DecodingError>,
+    ) -> Result<T, DecodingError> {
         let bytes = self.read_bytes(expected_size as usize);
         let mut decoder = Self(bytes);
         let res = f(&mut decoder)?;
         if !decoder.is_empty() {
-            Err(format!("expected {} bytes to be read, but there are {} left", expected_size, decoder.0.len()))?;
+            Err(format!(
+                "expected {} bytes to be read, but there are {} left",
+                expected_size,
+                decoder.0.len()
+            ))?;
         }
         Ok(res)
     }
@@ -66,7 +78,10 @@ impl<'a> WasmDecoder<'a> {
         Ok(())
     }
 
-    pub fn read_vec<T>(&mut self, f: impl Fn(&mut Self) -> Result<T, DecodingError>) -> Result<Vec<T>, DecodingError> {
+    pub fn read_vec<T>(
+        &mut self,
+        f: impl Fn(&mut Self) -> Result<T, DecodingError>,
+    ) -> Result<Vec<T>, DecodingError> {
         let len = self.read_u32() as usize;
 
         let mut items = Vec::with_capacity(len);
@@ -78,7 +93,11 @@ impl<'a> WasmDecoder<'a> {
         Ok(items)
     }
 
-    pub fn read_until<T>(&mut self, f: impl Fn(&mut Self) -> Result<T, DecodingError>, done: impl Fn(u8) -> bool) -> Result<Vec<T>, DecodingError> {
+    pub fn read_until<T>(
+        &mut self,
+        f: impl Fn(&mut Self) -> Result<T, DecodingError>,
+        done: impl Fn(u8) -> bool,
+    ) -> Result<Vec<T>, DecodingError> {
         let mut items = Vec::new();
 
         loop {
@@ -128,19 +147,19 @@ pub fn decode_bytes(mut b: &[u8]) -> Result<WasmModule, String> {
 
 #[derive(Debug, PartialEq)]
 pub struct WasmModule {
-    pub custom_sections: Vec<CustomSection>,
-    pub type_section: Option<TypeSection>,
-    pub import_section: Option<ImportSection>,
-    pub function_section: Option<FunctionSection>,
+    custom_sections: Vec<CustomSection>,
+    type_section: Option<TypeSection>,
+    import_section: Option<ImportSection>,
+    function_section: Option<FunctionSection>,
     pub table_section: Option<TableSection>,
     pub memory_section: Option<MemorySection>,
     pub global_section: Option<GlobalSection>,
-    pub export_section: Option<ExportSection>,
-    pub start_section: Option<StartSection>,
+    export_section: Option<ExportSection>,
+    start_section: Option<StartSection>,
     pub element_section: Option<ElementSection>,
-    pub code_section: Option<CodeSection>,
+    code_section: Option<CodeSection>,
     pub data_section: Option<DataSection>,
-    pub data_count_section: Option<DataCountSection>,
+    data_count_section: Option<DataCountSection>,
 }
 
 impl WasmModule {
@@ -179,6 +198,41 @@ impl WasmModule {
             Section::DataCount(data_count_section) => {
                 self.data_count_section = Some(data_count_section)
             }
+        }
+    }
+
+    pub fn get_function_type_idx(&self, function_idx: u32) -> Option<u32> {
+        let s = self.function_section.as_ref()?;
+        Some(s.type_ids[function_idx as usize])
+    }
+
+    pub fn get_function_type(&self, type_idx: u32) -> Option<&FuncType> {
+        let s = self.type_section.as_ref()?;
+        s.functions.get(type_idx as usize)
+    }
+
+    pub fn get_import_by_name(&self, mod_name: &str, name: &str) -> Option<&ImportType> {
+        let s = self.import_section.as_ref()?;
+        s.imports
+            .iter()
+            .find(|import| import.mod_name == mod_name && import.name == name)
+    }
+
+    pub fn get_export_by_name(&self, name: &str) -> Option<&Export> {
+        let s = self.export_section.as_ref()?;
+        s.exports.iter().find(|e| e.name == name)
+    }
+
+    pub fn get_code(&self, function_idx: u32) -> Option<&Code> {
+        let s = self.code_section.as_ref()?;
+        s.codes.get(function_idx as usize)
+    }
+
+    pub fn num_imports(&self) -> usize {
+        if let Some(s) = &self.import_section {
+            s.imports.len()
+        } else {
+            0
         }
     }
 }

@@ -714,31 +714,28 @@ impl StackFrame {
                     }
                     self.push_all(returns);
                 } else {
-                    let f_idx = *f_idx as usize;
-                    let t_idx =
-                        context.wasm.function_section.as_ref().unwrap().type_ids[f_idx] as usize;
+                    let f_idx = *f_idx;
+                    let t_idx = context.wasm.get_function_type_idx(f_idx).unwrap();
                     let func = context
                         .wasm
-                        .type_section
-                        .as_ref()
-                        .map(|s| &s.functions[t_idx])
+                        .get_function_type(t_idx)
                         .expect("no functions exist");
                     let (locals, expr) = context
                         .wasm
-                        .code_section
-                        .as_ref()
-                        .map(|s| &s.codes[f_idx - context.imports.len()].func)
+                        .get_code(f_idx - context.imports.len() as u32)
+                        .map(|c| &c.func)
                         .expect("no functions exist");
 
                     let params = self.pop_many(func.params.0.len())?;
                     let returns = context
-                        .run_code(locals, &expr.0, params, func.returns.0.len(), store)
-                        .map_err(|e| {
-                            e.wrap(ErrorReason::FailedFunction {
-                                f_idx: f_idx as u32,
-                                name: None,
-                            })
-                        })?;
+                        .run_code(
+                            locals.as_ref(),
+                            &expr.0,
+                            params,
+                            func.returns.0.len(),
+                            store,
+                        )
+                        .map_err(|e| e.wrap(ErrorReason::FailedFunction { f_idx, name: None }))?;
                     if returns.len() != func.returns.0.len() {
                         panic!(
                             "wrong number of return values, expected: {}, got: {}",
@@ -755,13 +752,13 @@ impl StackFrame {
                 let i = self.pop()?.as_i32()?;
                 match tab.elems[i as usize] {
                     Ref::Func(a) => {
-                        let t_idx =
-                            context.wasm.function_section.as_ref().unwrap().type_ids[a as usize];
-                        let func =
-                            &context.wasm.type_section.as_ref().unwrap().functions[t_idx as usize];
-                        let (locals, expr) = &context.wasm.code_section.as_ref().unwrap().codes
-                            [a as usize - context.imports.len()]
-                        .func;
+                        let t_idx = context.wasm.get_function_type_idx(a).unwrap();
+                        let func = context.wasm.get_function_type(t_idx).unwrap();
+                        let (locals, expr) = &context
+                            .wasm
+                            .get_code(a - context.imports.len() as u32)
+                            .map(|c| &c.func)
+                            .unwrap();
 
                         let params = self.pop_many(func.params.0.len())?;
                         let returns = context

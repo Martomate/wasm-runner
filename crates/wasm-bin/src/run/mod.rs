@@ -176,28 +176,15 @@ impl WasmInterpreter {
         name: &str,
         handler: fn(&[Value]) -> Vec<Value>,
     ) {
-        let imports = self
-            .wasm
-            .import_section
-            .clone()
-            .map_or(Vec::new(), |s| s.imports);
-
-        let Some(import) = imports
-            .iter()
-            .find(|import| import.mod_name == mod_name && import.name == name)
-        else {
-            panic!("unknown import");
-        };
+        let import = self.wasm.get_import_by_name(mod_name, name).expect("unknown import");
 
         let f = match import.desc {
-            ImportDesc::TypeIdx(t_idx) => {
-                self.wasm.type_section.clone().unwrap().functions[t_idx as usize].clone()
-            }
+            ImportDesc::TypeIdx(t_idx) => self.wasm.get_function_type(t_idx).unwrap(),
             _ => panic!("import must be for a function"),
         };
 
         self.imports.push(ExternalFunctionBinding {
-            signature: f,
+            signature: f.clone(),
             handler,
         });
     }
@@ -208,38 +195,24 @@ impl WasmInterpreter {
         parameters: Vec<&str>,
         store: &mut Store,
     ) -> Result<String, String> {
-        let types_section = self.wasm.type_section.clone().unwrap_or(TypeSection {
-            functions: Vec::new(),
-        });
-
-        let functions_section = self
+        let export = self
             .wasm
-            .function_section
-            .clone()
-            .unwrap_or(FunctionSection {
-                type_ids: Vec::new(),
-            });
-
-        let ExportSection { exports } = self.wasm.export_section.clone().unwrap();
-        let ExportDesc::Func(function_idx) = exports
-            .iter()
-            .find(|e| e.name == function_name)
-            .ok_or("unknown function")?
-            .desc
-        else {
+            .get_export_by_name(function_name)
+            .ok_or("unknown function")?;
+        let ExportDesc::Func(function_idx) = export.desc else {
             panic!("not a function");
         };
-        let exported_function_idx = function_idx
-            - self
-                .wasm
-                .import_section
-                .as_ref()
-                .map(|s| s.imports.len() as u32)
-                .unwrap_or(0);
+        let exported_function_idx = function_idx - self.wasm.num_imports() as u32;
 
-        let function = types_section.functions
-            [functions_section.type_ids[exported_function_idx as usize] as usize]
-            .clone();
+        let exported_function_type_idx = self
+            .wasm
+            .get_function_type_idx(exported_function_idx)
+            .unwrap();
+
+        let function = self
+            .wasm
+            .get_function_type(exported_function_type_idx)
+            .unwrap();
 
         let param_types = function.params.0.clone();
         if param_types.len() != parameters.len() {
@@ -269,10 +242,10 @@ impl WasmInterpreter {
         let Code {
             func: (locals, body),
             size: _,
-        } = self.wasm.code_section.clone().unwrap().codes[exported_function_idx as usize].clone();
+        } = self.wasm.get_code(exported_function_idx).unwrap();
 
         let res = self
-            .run_code(&locals, &body.0, param_values, return_types.len(), store)
+            .run_code(locals, &body.0, param_values, return_types.len(), store)
             .map_err(|e| {
                 e.wrap(ErrorReason::FailedFunction {
                     f_idx: function_idx,
