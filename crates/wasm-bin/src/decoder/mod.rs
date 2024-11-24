@@ -97,7 +97,7 @@ impl<'a> WasmDecoder<'a> {
     }
 }
 
-pub fn decode_bytes(mut b: &[u8]) -> Result<WasmFile, String> {
+pub fn decode_bytes(mut b: &[u8]) -> Result<WasmModule, String> {
     b = b
         .strip_prefix(&[0x00, 0x61, 0x73, 0x6d])
         .ok_or("missing magic bytes")?;
@@ -115,7 +115,7 @@ pub fn decode_bytes(mut b: &[u8]) -> Result<WasmFile, String> {
         raw_sections.push((section_id, b.read_bytes(section_size)));
     }
 
-    let mut wasm_file = WasmFile::empty();
+    let mut wasm_file = WasmModule::empty();
 
     for (id, bytes) in raw_sections.iter().cloned() {
         let mut bytes = WasmDecoder::new(bytes);
@@ -127,7 +127,7 @@ pub fn decode_bytes(mut b: &[u8]) -> Result<WasmFile, String> {
 }
 
 #[derive(Debug, PartialEq)]
-pub struct WasmFile {
+pub struct WasmModule {
     pub custom_sections: Vec<CustomSection>,
     pub type_section: Option<TypeSection>,
     pub import_section: Option<ImportSection>,
@@ -143,7 +143,7 @@ pub struct WasmFile {
     pub data_count_section: Option<DataCountSection>,
 }
 
-impl WasmFile {
+impl WasmModule {
     fn empty() -> Self {
         Self {
             custom_sections: Vec::new(),

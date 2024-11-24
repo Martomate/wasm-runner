@@ -22,6 +22,10 @@ pub enum Value {
 }
 
 impl Value {
+    fn bool_to_i32(b: bool) -> Value {
+        Value::I32(if b { 1 } else { 0 })
+    }
+
     fn type_name(&self) -> &'static str {
         match self {
             Value::I32(_) => "i32",
@@ -173,6 +177,124 @@ impl IndexMut<u32> for StackFrame {
 }
 
 impl StackFrame {
+    fn run_unop_i32_s(&mut self, op: impl FnOnce(i32) -> Value) -> Result<(), InterpreterError> {
+        let c = self.pop()?.as_i32()?;
+        self.push(op(c));
+        Ok(())
+    }
+
+    fn run_unop_i64_s(&mut self, op: impl FnOnce(i64) -> Value) -> Result<(), InterpreterError> {
+        let c = self.pop()?.as_i64()?;
+        self.push(op(c));
+        Ok(())
+    }
+
+    fn run_unop_f32(&mut self, op: impl FnOnce(f32) -> Value) -> Result<(), InterpreterError> {
+        let c = self.pop()?.as_f32()?;
+        self.push(op(c));
+        Ok(())
+    }
+
+    fn run_unop_f64(&mut self, op: impl FnOnce(f64) -> Value) -> Result<(), InterpreterError> {
+        let c = self.pop()?.as_f64()?;
+        self.push(op(c));
+        Ok(())
+    }
+
+    fn run_unop_v128(&mut self, op: impl FnOnce(i128) -> Value) -> Result<(), InterpreterError> {
+        let c = self.pop()?.as_v128()?;
+        self.push(op(c));
+        Ok(())
+    }
+
+    fn run_binop_i32_s(
+        &mut self,
+        op: impl FnOnce(i32, i32) -> Value,
+    ) -> Result<(), InterpreterError> {
+        let c2 = self.pop()?.as_i32()?;
+        let c1 = self.pop()?.as_i32()?;
+        self.push(op(c1, c2));
+        Ok(())
+    }
+
+    fn run_binop_i64_s(
+        &mut self,
+        op: impl FnOnce(i64, i64) -> Value,
+    ) -> Result<(), InterpreterError> {
+        let c2 = self.pop()?.as_i64()?;
+        let c1 = self.pop()?.as_i64()?;
+        self.push(op(c1, c2));
+        Ok(())
+    }
+
+    fn run_binop_i32_u(
+        &mut self,
+        op: impl FnOnce(u32, u32) -> Value,
+    ) -> Result<(), InterpreterError> {
+        let c2 = self.pop()?.as_i32()? as u32;
+        let c1 = self.pop()?.as_i32()? as u32;
+        self.push(op(c1, c2));
+        Ok(())
+    }
+
+    fn run_binop_i64_u(
+        &mut self,
+        op: impl FnOnce(u64, u64) -> Value,
+    ) -> Result<(), InterpreterError> {
+        let c2 = self.pop()?.as_i64()? as u64;
+        let c1 = self.pop()?.as_i64()? as u64;
+        self.push(op(c1, c2));
+        Ok(())
+    }
+
+    fn run_binop_f32(
+        &mut self,
+        op: impl FnOnce(f32, f32) -> Value,
+    ) -> Result<(), InterpreterError> {
+        let c2 = self.pop()?.as_f32()?;
+        let c1 = self.pop()?.as_f32()?;
+        self.push(op(c1, c2));
+        Ok(())
+    }
+
+    fn run_binop_f64(
+        &mut self,
+        op: impl FnOnce(f64, f64) -> Value,
+    ) -> Result<(), InterpreterError> {
+        let c2 = self.pop()?.as_f64()?;
+        let c1 = self.pop()?.as_f64()?;
+        self.push(op(c1, c2));
+        Ok(())
+    }
+
+    fn run_binop_v128_i32x4(
+        &mut self,
+        op: impl Fn(i32, i32) -> i32,
+    ) -> Result<(), InterpreterError> {
+        let c2 = self.pop()?.as_v128()?;
+        let c1 = self.pop()?.as_v128()?;
+
+        let c2 = c2.to_le_bytes();
+        let c1 = c1.to_le_bytes();
+
+        let mut c: [u8; 16] = [0; 16];
+        for i in 0..4 {
+            let idx = i * 4;
+            let n2 = i32::from_le_bytes(<[u8; 4]>::try_from(&c2[idx..idx + 4]).unwrap());
+            let n1 = i32::from_le_bytes(<[u8; 4]>::try_from(&c1[idx..idx + 4]).unwrap());
+
+            let n = op(n1, n2);
+
+            c[idx..idx + 4].copy_from_slice(&n.to_le_bytes());
+        }
+        let c = i128::from_le_bytes(c);
+
+        self.push(Value::V128(c));
+        Ok(())
+    }
+}
+
+impl StackFrame {
     pub fn run_instruction(
         &mut self,
         op: &Instr,
@@ -185,18 +307,9 @@ impl StackFrame {
         let tables = store.tables.as_mut_slice();
 
         match op {
-            Instr::LocalGet(idx) => {
-                let val = self[*idx];
-                self.push(val);
-            }
-            Instr::LocalSet(idx) => {
-                let val = self.pop()?;
-                self[*idx] = val;
-            }
-            Instr::LocalTee(idx) => {
-                let val = self.top()?;
-                self[*idx] = val;
-            }
+            Instr::LocalGet(idx) => self.push(self[*idx]),
+            Instr::LocalSet(idx) => self[*idx] = self.pop()?,
+            Instr::LocalTee(idx) => self[*idx] = self.top()?,
             Instr::GlobalGet(idx) => {
                 let global = &globals[*idx as usize];
                 self.push(global.value);
@@ -209,21 +322,11 @@ impl StackFrame {
                 let value = self.pop()?;
                 global.value = value;
             }
-            Instr::I32Const(val) => {
-                self.push(Value::I32(*val));
-            }
-            Instr::I64Const(val) => {
-                self.push(Value::I64(*val));
-            }
-            Instr::F32Const(val) => {
-                self.push(Value::F32(*val));
-            }
-            Instr::F64Const(val) => {
-                self.push(Value::F64(*val));
-            }
-            Instr::V128Const(val) => {
-                self.push(Value::V128(*val));
-            }
+            Instr::I32Const(val) => self.push(Value::I32(*val)),
+            Instr::I64Const(val) => self.push(Value::I64(*val)),
+            Instr::F32Const(val) => self.push(Value::F32(*val)),
+            Instr::F64Const(val) => self.push(Value::F64(*val)),
+            Instr::V128Const(val) => self.push(Value::V128(*val)),
             Instr::I32Load(MemArg { align, offset }) => {
                 if *align > 2 {
                     panic!("alignment may not exceed 2, got {}", align);
@@ -362,335 +465,79 @@ impl StackFrame {
                 }
                 memories[0].write_bytes_fixed::<8>(ea as u32, c.to_le_bytes());
             }
-            Instr::I32Add => {
-                let c2 = self.pop()?.as_i32()?;
-                let c1 = self.pop()?.as_i32()?;
-                self.push(Value::I32(c1.wrapping_add(c2)));
-            }
-            Instr::I64Add => {
-                let c2 = self.pop()?.as_i64()?;
-                let c1 = self.pop()?.as_i64()?;
-                self.push(Value::I64(c1.wrapping_add(c2)));
-            }
-            Instr::F32Add => {
-                let c2 = self.pop()?.as_f32()?;
-                let c1 = self.pop()?.as_f32()?;
-                self.push(Value::F32(c1 + c2));
-            }
-            Instr::F64Add => {
-                let c2 = self.pop()?.as_f64()?;
-                let c1 = self.pop()?.as_f64()?;
-                self.push(Value::F64(c1 + c2));
-            }
-            Instr::I32Sub => {
-                let c2 = self.pop()?.as_i32()?;
-                let c1 = self.pop()?.as_i32()?;
-                self.push(Value::I32(c1.wrapping_sub(c2)));
-            }
-            Instr::I64Sub => {
-                let c2 = self.pop()?.as_i64()?;
-                let c1 = self.pop()?.as_i64()?;
-                self.push(Value::I64(c1.wrapping_sub(c2)));
-            }
-            Instr::F32Sub => {
-                let c2 = self.pop()?.as_f32()?;
-                let c1 = self.pop()?.as_f32()?;
-                self.push(Value::F32(c1 - c2));
-            }
-            Instr::F64Sub => {
-                let c2 = self.pop()?.as_f64()?;
-                let c1 = self.pop()?.as_f64()?;
-                self.push(Value::F64(c1 - c2));
-            }
-            Instr::I32Mul => {
-                let c2 = self.pop()?.as_i32()?;
-                let c1 = self.pop()?.as_i32()?;
-                self.push(Value::I32(c1.wrapping_mul(c2)));
-            }
-            Instr::I64Mul => {
-                let c2 = self.pop()?.as_i64()?;
-                let c1 = self.pop()?.as_i64()?;
-                self.push(Value::I64(c1.wrapping_mul(c2)));
-            }
-            Instr::F32Mul => {
-                let c2 = self.pop()?.as_f32()?;
-                let c1 = self.pop()?.as_f32()?;
-                self.push(Value::F32(c1 * c2));
-            }
-            Instr::F64Mul => {
-                let c2 = self.pop()?.as_f64()?;
-                let c1 = self.pop()?.as_f64()?;
-                self.push(Value::F64(c1 * c2));
-            }
-            Instr::F32Div => {
-                let c2 = self.pop()?.as_f32()?;
-                let c1 = self.pop()?.as_f32()?;
-                self.push(Value::F32(c1 / c2));
-            }
-            Instr::F64Div => {
-                let c2 = self.pop()?.as_f64()?;
-                let c1 = self.pop()?.as_f64()?;
-                self.push(Value::F64(c1 / c2));
-            }
-            Instr::I32Eqz => {
-                let c1 = self.pop()?.as_i32()? as u32;
-                let c = if c1 == 0 { 1 } else { 0 };
-                self.push(Value::I32(c));
-            }
-            Instr::I32Eq => {
-                let c2 = self.pop()?.as_i32()? as u32;
-                let c1 = self.pop()?.as_i32()? as u32;
-                let c = if c1 == c2 { 1 } else { 0 };
-                self.push(Value::I32(c));
-            }
-            Instr::I32Ne => {
-                let c2 = self.pop()?.as_i32()?;
-                let c1 = self.pop()?.as_i32()?;
-                let c = if c1 != c2 { 1 } else { 0 };
-                self.push(Value::I32(c));
-            }
-            Instr::F32Ne => {
-                let c2 = self.pop()?.as_f32()?;
-                let c1 = self.pop()?.as_f32()?;
-                let c = if c1 != c2 { 1 } else { 0 };
-                self.push(Value::I32(c));
-            }
-            Instr::F64Ne => {
-                let c2 = self.pop()?.as_f64()?;
-                let c1 = self.pop()?.as_f64()?;
-                let c = if c1 != c2 { 1 } else { 0 };
-                self.push(Value::I32(c));
-            }
-            Instr::I32GtU => {
-                let c2 = self.pop()?.as_i32()? as u32;
-                let c1 = self.pop()?.as_i32()? as u32;
-                let c = if c1 > c2 { 1 } else { 0 };
-                self.push(Value::I32(c));
-            }
-            Instr::I32GtS => {
-                let c2 = self.pop()?.as_i32()?;
-                let c1 = self.pop()?.as_i32()?;
-                let c = if c1 > c2 { 1 } else { 0 };
-                self.push(Value::I32(c));
-            }
-            Instr::F32Gt => {
-                let c2 = self.pop()?.as_f32()?;
-                let c1 = self.pop()?.as_f32()?;
-                let c = if c1 > c2 { 1 } else { 0 };
-                self.push(Value::I32(c));
-            }
-            Instr::F64Gt => {
-                let c2 = self.pop()?.as_f64()?;
-                let c1 = self.pop()?.as_f64()?;
-                let c = if c1 > c2 { 1 } else { 0 };
-                self.push(Value::I32(c));
-            }
-            Instr::I32GeU => {
-                let c2 = self.pop()?.as_i32()? as u32;
-                let c1 = self.pop()?.as_i32()? as u32;
-                let c = if c1 >= c2 { 1 } else { 0 };
-                self.push(Value::I32(c));
-            }
-            Instr::I32GeS => {
-                let c2 = self.pop()?.as_i32()?;
-                let c1 = self.pop()?.as_i32()?;
-                let c = if c1 >= c2 { 1 } else { 0 };
-                self.push(Value::I32(c));
-            }
-            Instr::F32Ge => {
-                let c2 = self.pop()?.as_f32()?;
-                let c1 = self.pop()?.as_f32()?;
-                let c = if c1 >= c2 { 1 } else { 0 };
-                self.push(Value::I32(c));
-            }
-            Instr::F64Ge => {
-                let c2 = self.pop()?.as_f64()?;
-                let c1 = self.pop()?.as_f64()?;
-                let c = if c1 >= c2 { 1 } else { 0 };
-                self.push(Value::I32(c));
-            }
-            Instr::I32LtU => {
-                let c2 = self.pop()?.as_i32()? as u32;
-                let c1 = self.pop()?.as_i32()? as u32;
-                let c = if c1 < c2 { 1 } else { 0 };
-                self.push(Value::I32(c));
-            }
-            Instr::I32LtS => {
-                let c2 = self.pop()?.as_i32()?;
-                let c1 = self.pop()?.as_i32()?;
-                let c = if c1 < c2 { 1 } else { 0 };
-                self.push(Value::I32(c));
-            }
-            Instr::F32Lt => {
-                let c2 = self.pop()?.as_f32()?;
-                let c1 = self.pop()?.as_f32()?;
-                let c = if c1 < c2 { 1 } else { 0 };
-                self.push(Value::I32(c));
-            }
-            Instr::F64Lt => {
-                let c2 = self.pop()?.as_f64()?;
-                let c1 = self.pop()?.as_f64()?;
-                let c = if c1 < c2 { 1 } else { 0 };
-                self.push(Value::I32(c));
-            }
-            Instr::I32LeU => {
-                let c2 = self.pop()?.as_i32()? as u32;
-                let c1 = self.pop()?.as_i32()? as u32;
-                let c = if c1 <= c2 { 1 } else { 0 };
-                self.push(Value::I32(c));
-            }
-            Instr::I32LeS => {
-                let c2 = self.pop()?.as_i32()?;
-                let c1 = self.pop()?.as_i32()?;
-                let c = if c1 <= c2 { 1 } else { 0 };
-                self.push(Value::I32(c));
-            }
-            Instr::I32And => {
-                let c2 = self.pop()?.as_i32()?;
-                let c1 = self.pop()?.as_i32()?;
-                let c = c1 & c2;
-                self.push(Value::I32(c));
-            }
-            Instr::I64And => {
-                let c2 = self.pop()?.as_i64()?;
-                let c1 = self.pop()?.as_i64()?;
-                let c = c1 & c2;
-                self.push(Value::I64(c));
-            }
-            Instr::I32Or => {
-                let c2 = self.pop()?.as_i32()?;
-                let c1 = self.pop()?.as_i32()?;
-                let c = c1 | c2;
-                self.push(Value::I32(c));
-            }
-            Instr::I64Or => {
-                let c2 = self.pop()?.as_i64()?;
-                let c1 = self.pop()?.as_i64()?;
-                let c = c1 | c2;
-                self.push(Value::I64(c));
-            }
-            Instr::I32Xor => {
-                let c2 = self.pop()?.as_i32()?;
-                let c1 = self.pop()?.as_i32()?;
-                let c = c1 ^ c2;
-                self.push(Value::I32(c));
-            }
-            Instr::I64Xor => {
-                let c2 = self.pop()?.as_i64()?;
-                let c1 = self.pop()?.as_i64()?;
-                let c = c1 ^ c2;
-                self.push(Value::I64(c));
-            }
+            Instr::I32Add => self.run_binop_i32_s(|c1, c2| Value::I32(c1.wrapping_add(c2)))?,
+            Instr::I64Add => self.run_binop_i64_s(|c1, c2| Value::I64(c1.wrapping_add(c2)))?,
+            Instr::F32Add => self.run_binop_f32(|c1, c2| Value::F32(c1 + c2))?,
+            Instr::F64Add => self.run_binop_f64(|c1, c2| Value::F64(c1 + c2))?,
+            Instr::I32Sub => self.run_binop_i32_s(|c1, c2| Value::I32(c1.wrapping_sub(c2)))?,
+            Instr::I64Sub => self.run_binop_i64_s(|c1, c2| Value::I64(c1.wrapping_sub(c2)))?,
+            Instr::F32Sub => self.run_binop_f32(|c1, c2| Value::F32(c1 - c2))?,
+            Instr::F64Sub => self.run_binop_f64(|c1, c2| Value::F64(c1 - c2))?,
+            Instr::I32Mul => self.run_binop_i32_s(|c1, c2| Value::I32(c1.wrapping_mul(c2)))?,
+            Instr::I64Mul => self.run_binop_i64_s(|c1, c2| Value::I64(c1.wrapping_mul(c2)))?,
+            Instr::F32Mul => self.run_binop_f32(|c1, c2| Value::F32(c1 * c2))?,
+            Instr::F64Mul => self.run_binop_f64(|c1, c2| Value::F64(c1 * c2))?,
+            Instr::F32Div => self.run_binop_f32(|c1, c2| Value::F32(c1 / c2))?,
+            Instr::F64Div => self.run_binop_f64(|c1, c2| Value::F64(c1 / c2))?,
+            Instr::I32Eqz => self.run_unop_i32_s(|c1| Value::bool_to_i32(c1 == 0))?,
+            Instr::I32Eq => self.run_binop_i32_s(|c1, c2| Value::bool_to_i32(c1 == c2))?,
+            Instr::I32Ne => self.run_binop_i32_s(|c1, c2| Value::bool_to_i32(c1 != c2))?,
+            Instr::F32Ne => self.run_binop_f32(|c1, c2| Value::bool_to_i32(c1 != c2))?,
+            Instr::F64Ne => self.run_binop_f64(|c1, c2| Value::bool_to_i32(c1 != c2))?,
+            Instr::I32GtU => self.run_binop_i32_u(|c1, c2| Value::bool_to_i32(c1 > c2))?,
+            Instr::I32GtS => self.run_binop_i32_s(|c1, c2| Value::bool_to_i32(c1 > c2))?,
+            Instr::F32Gt => self.run_binop_f32(|c1, c2| Value::bool_to_i32(c1 > c2))?,
+            Instr::F64Gt => self.run_binop_f64(|c1, c2| Value::bool_to_i32(c1 > c2))?,
+            Instr::I32GeU => self.run_binop_i32_u(|c1, c2| Value::bool_to_i32(c1 >= c2))?,
+            Instr::I32GeS => self.run_binop_i32_s(|c1, c2| Value::bool_to_i32(c1 >= c2))?,
+            Instr::F32Ge => self.run_binop_f32(|c1, c2| Value::bool_to_i32(c1 >= c2))?,
+            Instr::F64Ge => self.run_binop_f64(|c1, c2| Value::bool_to_i32(c1 >= c2))?,
+            Instr::I32LtU => self.run_binop_i32_u(|c1, c2| Value::bool_to_i32(c1 < c2))?,
+            Instr::I32LtS => self.run_binop_i32_s(|c1, c2| Value::bool_to_i32(c1 < c2))?,
+            Instr::F32Lt => self.run_binop_f32(|c1, c2| Value::bool_to_i32(c1 < c2))?,
+            Instr::F64Lt => self.run_binop_f64(|c1, c2| Value::bool_to_i32(c1 < c2))?,
+            Instr::I32LeU => self.run_binop_i32_u(|c1, c2| Value::bool_to_i32(c1 <= c2))?,
+            Instr::I32LeS => self.run_binop_i32_s(|c1, c2| Value::bool_to_i32(c1 <= c2))?,
+            Instr::I32And => self.run_binop_i32_s(|c1, c2| Value::I32(c1 & c2))?,
+            Instr::I64And => self.run_binop_i64_s(|c1, c2| Value::I64(c1 & c2))?,
+            Instr::I32Or => self.run_binop_i32_s(|c1, c2| Value::I32(c1 | c2))?,
+            Instr::I64Or => self.run_binop_i64_s(|c1, c2| Value::I64(c1 | c2))?,
+            Instr::I32Xor => self.run_binop_i32_s(|c1, c2| Value::I32(c1 ^ c2))?,
+            Instr::I64Xor => self.run_binop_i64_s(|c1, c2| Value::I64(c1 ^ c2))?,
             Instr::I32ShrU => {
-                let c2 = self.pop()?.as_i32()? as u32;
-                let c1 = self.pop()?.as_i32()? as u32;
-                let c = c1 >> (c2 & 31);
-                self.push(Value::I32(c as i32));
+                self.run_binop_i32_u(|c1, c2| Value::I32((c1 >> (c2 & 31)) as i32))?
             }
             Instr::I64ShrU => {
-                let c2 = self.pop()?.as_i64()? as u64;
-                let c1 = self.pop()?.as_i64()? as u64;
-                let c = c1 >> (c2 & 63);
-                self.push(Value::I64(c as i64));
+                self.run_binop_i64_u(|c1, c2| Value::I64((c1 >> (c2 & 63)) as i64))?
             }
-            Instr::I32Shl => {
-                let c2 = self.pop()?.as_i32()?;
-                let c1 = self.pop()?.as_i32()?;
-                let c = c1 << (c2 & 31);
-                self.push(Value::I32(c));
-            }
-            Instr::I64Shl => {
-                let c2 = self.pop()?.as_i64()?;
-                let c1 = self.pop()?.as_i64()?;
-                let c = c1 << (c2 & 63);
-                self.push(Value::I64(c));
-            }
+            Instr::I32Shl => self.run_binop_i32_s(|c1, c2| Value::I32(c1 << (c2 & 31)))?,
+            Instr::I64Shl => self.run_binop_i64_s(|c1, c2| Value::I64(c1 << (c2 & 63)))?,
             Instr::I32Rotl => {
-                let c2 = self.pop()?.as_i32()?;
-                let c1 = self.pop()?.as_i32()?;
-                let c = c1.rotate_left(c2 as u32 & 31);
-                self.push(Value::I32(c));
+                self.run_binop_i32_s(|c1, c2| Value::I32(c1.rotate_left(c2 as u32 & 31)))?
             }
-            Instr::I32Clz => {
-                let c1 = self.pop()?.as_i32()?;
-                let c = c1.leading_zeros() as i32;
-                self.push(Value::I32(c));
-            }
-            Instr::I32Ctz => {
-                let c1 = self.pop()?.as_i32()?;
-                let c = c1.trailing_zeros() as i32;
-                self.push(Value::I32(c));
-            }
-            Instr::F32Abs => {
-                let c1 = self.pop()?.as_f32()?;
-                let c = c1.abs();
-                self.push(Value::F32(c));
-            }
-            Instr::F64Abs => {
-                let c1 = self.pop()?.as_f64()?;
-                let c = c1.abs();
-                self.push(Value::F64(c));
-            }
-            Instr::F32Neg => {
-                let c1 = self.pop()?.as_f32()?;
-                let c = -c1;
-                self.push(Value::F32(c));
-            }
-            Instr::F64Neg => {
-                let c1 = self.pop()?.as_f64()?;
-                let c = -c1;
-                self.push(Value::F64(c));
-            }
-            Instr::I32Extend8S => {
-                let c1 = self.pop()?.as_i32()? as i8;
-                let c2 = c1 as i32;
-                self.push(Value::I32(c2));
-            }
-            Instr::I64ExtendI32U => {
-                let c1 = self.pop()?.as_i32()? as u32;
-                let c2 = c1 as i64;
-                self.push(Value::I64(c2));
-            }
-            Instr::I32WrapI64 => {
-                let c1 = self.pop()?.as_i64()?;
-                let c2 = c1 as i32;
-                self.push(Value::I32(c2));
-            }
-            Instr::I32TruncF64S => {
-                let c1 = self.pop()?.as_f64()?;
+            Instr::I32Clz => self.run_unop_i32_s(|c1| Value::I32(c1.leading_zeros() as i32))?,
+            Instr::I32Ctz => self.run_unop_i32_s(|c1| Value::I32(c1.trailing_zeros() as i32))?,
+            Instr::F32Abs => self.run_unop_f32(|c1| Value::F32(c1.abs()))?,
+            Instr::F64Abs => self.run_unop_f64(|c1| Value::F64(c1.abs()))?,
+            Instr::F32Neg => self.run_unop_f32(|c1| Value::F32(-c1))?,
+            Instr::F64Neg => self.run_unop_f64(|c1| Value::F64(-c1))?,
+            Instr::I32Extend8S => self.run_unop_i32_s(|c1| Value::I32(c1 as i8 as i32))?,
+            Instr::I64ExtendI32U => self.run_unop_i32_s(|c1| Value::I64(c1 as u32 as i64))?,
+            Instr::I32WrapI64 => self.run_unop_i64_s(|c1| Value::I32(c1 as i32))?,
+            Instr::I32TruncF64S => self.run_unop_f64(|c1| {
                 let c = c1.trunc() as i64;
-                if c < i32::MIN as i64 {
-                    panic!("I32TruncF64S: value is too low");
-                }
-                if c > i32::MAX as i64 {
-                    panic!("I32TruncF64S: value is too high");
-                }
-                self.push(Value::I32(c as i32));
-            }
-            Instr::F64ConvertI32S => {
-                let c1 = self.pop()?.as_i32()?;
-                let c = c1 as f64;
-                self.push(Value::F64(c));
-            }
-            Instr::I32ReinterpretF32 => {
-                let c1 = self.pop()?.as_f32()?;
-                let c = c1.to_bits() as i32;
-                self.push(Value::I32(c));
-            }
-            Instr::I64ReinterpretF64 => {
-                let c1 = self.pop()?.as_f64()?;
-                let c = c1.to_bits() as i64;
-                self.push(Value::I64(c));
-            }
+                assert!(c >= i32::MIN as i64, "I32TruncF64S: value is too low");
+                assert!(c <= i32::MAX as i64, "I32TruncF64S: value is too high");
+                Value::I32(c as i32)
+            })?,
+            Instr::F64ConvertI32S => self.run_unop_i32_s(|c1| Value::F64(c1 as f64))?,
+            Instr::I32ReinterpretF32 => self.run_unop_f32(|c1| Value::I32(c1.to_bits() as i32))?,
+            Instr::I64ReinterpretF64 => self.run_unop_f64(|c1| Value::I64(c1.to_bits() as i64))?,
             Instr::F32ReinterpretI32 => {
-                let c1 = self.pop()?.as_i32()? as u32;
-                let c = f32::from_bits(c1);
-                self.push(Value::F32(c));
+                self.run_unop_i32_s(|c1| Value::F32(f32::from_bits(c1 as u32)))?
             }
             Instr::F64ReinterpretI64 => {
-                let c1 = self.pop()?.as_i64()? as u64;
-                let c = f64::from_bits(c1);
-                self.push(Value::F64(c));
+                self.run_unop_i64_s(|c1| Value::F64(f64::from_bits(c1 as u64)))?
             }
             Instr::I32x4ExtractLane(x) => {
                 assert!(*x < 4);
@@ -739,94 +586,12 @@ impl StackFrame {
                 self.push(Value::V128(c));
             }
             Instr::I32x4MinU => {
-                let c2 = self.pop()?.as_v128()?;
-                let c1 = self.pop()?.as_v128()?;
-
-                let c2 = c2.to_le_bytes();
-                let c1 = c1.to_le_bytes();
-
-                let mut c: [u8; 16] = [0; 16];
-                for i in 0..4 {
-                    let idx = i * 4;
-                    let n2 = u32::from_le_bytes(<[u8; 4]>::try_from(&c2[idx..idx + 4]).unwrap());
-                    let n1 = u32::from_le_bytes(<[u8; 4]>::try_from(&c1[idx..idx + 4]).unwrap());
-
-                    let n = n1.min(n2);
-
-                    c[idx..idx + 4].copy_from_slice(&n.to_le_bytes());
-                }
-                let c = i128::from_le_bytes(c);
-
-                self.push(Value::V128(c));
+                self.run_binop_v128_i32x4(|n1, n2| (n1 as u32).min(n2 as u32) as i32)?
             }
-            Instr::I32x4Add => {
-                let c2 = self.pop()?.as_v128()?;
-                let c1 = self.pop()?.as_v128()?;
-
-                let c2 = c2.to_le_bytes();
-                let c1 = c1.to_le_bytes();
-
-                let mut c: [u8; 16] = [0; 16];
-                for i in 0..4 {
-                    let idx = i * 4;
-                    let n2 = i32::from_le_bytes(<[u8; 4]>::try_from(&c2[idx..idx + 4]).unwrap());
-                    let n1 = i32::from_le_bytes(<[u8; 4]>::try_from(&c1[idx..idx + 4]).unwrap());
-
-                    let n = n1.wrapping_add(n2);
-
-                    c[idx..idx + 4].copy_from_slice(&n.to_le_bytes());
-                }
-                let c = i128::from_le_bytes(c);
-
-                self.push(Value::V128(c));
-            }
-            Instr::I32x4Sub => {
-                let c2 = self.pop()?.as_v128()?;
-                let c1 = self.pop()?.as_v128()?;
-
-                let c2 = c2.to_le_bytes();
-                let c1 = c1.to_le_bytes();
-
-                let mut c: [u8; 16] = [0; 16];
-                for i in 0..4 {
-                    let idx = i * 4;
-                    let n2 = i32::from_le_bytes(<[u8; 4]>::try_from(&c2[idx..idx + 4]).unwrap());
-                    let n1 = i32::from_le_bytes(<[u8; 4]>::try_from(&c1[idx..idx + 4]).unwrap());
-
-                    let n = n1.wrapping_sub(n2);
-
-                    c[idx..idx + 4].copy_from_slice(&n.to_le_bytes());
-                }
-                let c = i128::from_le_bytes(c);
-
-                self.push(Value::V128(c));
-            }
-            Instr::I32x4Mul => {
-                let c2 = self.pop()?.as_v128()?;
-                let c1 = self.pop()?.as_v128()?;
-
-                let c2 = c2.to_le_bytes();
-                let c1 = c1.to_le_bytes();
-
-                let mut c: [u8; 16] = [0; 16];
-                for i in 0..4 {
-                    let idx = i * 4;
-                    let n2 = i32::from_le_bytes(<[u8; 4]>::try_from(&c2[idx..idx + 4]).unwrap());
-                    let n1 = i32::from_le_bytes(<[u8; 4]>::try_from(&c1[idx..idx + 4]).unwrap());
-
-                    let n = n1.wrapping_mul(n2);
-
-                    c[idx..idx + 4].copy_from_slice(&n.to_le_bytes());
-                }
-                let c = i128::from_le_bytes(c);
-
-                self.push(Value::V128(c));
-            }
-            Instr::V128Not => {
-                let c1 = self.pop()?.as_v128()?;
-                let c = !c1;
-                self.push(Value::V128(c));
-            }
+            Instr::I32x4Add => self.run_binop_v128_i32x4(|n1, n2| n1.wrapping_add(n2))?,
+            Instr::I32x4Sub => self.run_binop_v128_i32x4(|n1, n2| n1.wrapping_sub(n2))?,
+            Instr::I32x4Mul => self.run_binop_v128_i32x4(|n1, n2| n1.wrapping_mul(n2))?,
+            Instr::V128Not => self.run_unop_v128(|c1| Value::V128(!c1))?,
             Instr::Branch(l_idx) => {
                 return Ok(Some(*l_idx));
             }

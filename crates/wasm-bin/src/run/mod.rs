@@ -3,7 +3,7 @@ use std::iter;
 use super::decoder::instr::Instr;
 use super::decoder::section::*;
 use super::decoder::types::{FuncType, NumType, RefType, TableType, ValType, VecType};
-use super::decoder::WasmFile;
+use super::decoder::WasmModule;
 
 mod error;
 mod mem;
@@ -35,7 +35,7 @@ enum Ref {
 }
 
 pub struct WasmInterpreter {
-    wasm: WasmFile,
+    wasm: WasmModule,
     imports: Vec<ExternalFunctionBinding>,
 }
 
@@ -52,7 +52,7 @@ impl Store {
 }
 
 impl Store {
-    pub fn create(wasm: &WasmFile) -> Self {
+    pub fn create(wasm: &WasmModule) -> Self {
         let mut memories = Vec::new();
         if let Some(ref mem) = wasm.memory_section {
             for m in mem.memories.iter() {
@@ -163,7 +163,7 @@ impl Store {
 }
 
 impl WasmInterpreter {
-    pub fn new(wasm: WasmFile) -> Self {
+    pub fn new(wasm: WasmModule) -> Self {
         Self {
             wasm,
             imports: Vec::new(),
