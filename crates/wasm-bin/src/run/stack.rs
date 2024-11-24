@@ -3,7 +3,7 @@ use std::{
     ops::{Index, IndexMut},
 };
 
-use crate::instr::{BlockType, Instr, MemArg};
+use crate::decoder::instr::{BlockType, Instr, MemArg};
 
 use super::{
     error::{ErrorReason, InterpreterError, StackError},

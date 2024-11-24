@@ -1,6 +1,6 @@
-use crate::decoder::WasmDecoder;
-use crate::error::DecodingError;
-use crate::types::{RefType, ValType};
+use super::WasmDecoder;
+use super::error::DecodingError;
+use super::types::{RefType, ValType};
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct Expr(pub Vec<Instr>);

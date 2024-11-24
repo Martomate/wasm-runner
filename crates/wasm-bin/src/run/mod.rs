@@ -1,11 +1,9 @@
 use std::iter;
 
-use crate::types::VecType;
-
-use super::instr::Instr;
-use super::section::*;
-use super::types::{FuncType, NumType, RefType, TableType, ValType};
-use super::WasmFile;
+use super::decoder::instr::Instr;
+use super::decoder::section::*;
+use super::decoder::types::{FuncType, NumType, RefType, TableType, ValType, VecType};
+use super::decoder::WasmFile;
 
 mod error;
 mod mem;
@@ -255,16 +253,14 @@ impl WasmInterpreter {
         let param_values: Vec<Value> = param_types
             .iter()
             .zip(parameters.iter())
-            .map(|(t, s)| {
-                match t {
-                    ValType::Num(t) => match t {
-                        NumType::I32 => Value::I32(s.parse::<i32>().unwrap()),
-                        NumType::I64 => Value::I64(s.parse::<i64>().unwrap()),
-                        NumType::F32 => Value::F32(s.parse::<f32>().unwrap()),
-                        NumType::F64 => Value::F64(s.parse::<f64>().unwrap()),
-                    },
-                    t => panic!("parameters of kind {:?} are not supported yet", t),
-                }
+            .map(|(t, s)| match t {
+                ValType::Num(t) => match t {
+                    NumType::I32 => Value::I32(s.parse::<i32>().unwrap()),
+                    NumType::I64 => Value::I64(s.parse::<i64>().unwrap()),
+                    NumType::F32 => Value::F32(s.parse::<f32>().unwrap()),
+                    NumType::F64 => Value::F64(s.parse::<f64>().unwrap()),
+                },
+                t => panic!("parameters of kind {:?} are not supported yet", t),
             })
             .collect();
 
@@ -277,13 +273,19 @@ impl WasmInterpreter {
 
         let res = self
             .run_code(&locals, &body.0, param_values, return_types.len(), store)
-            .map_err(|e| e.wrap(ErrorReason::FailedFunction { f_idx: function_idx, name: Some(function_name.to_string()) }))
+            .map_err(|e| {
+                e.wrap(ErrorReason::FailedFunction {
+                    f_idx: function_idx,
+                    name: Some(function_name.to_string()),
+                })
+            })
             .map_err(|e| {
                 eprintln!("{:?}", e);
                 e.to_string()
             })?;
 
-        Ok(res.into_iter()
+        Ok(res
+            .into_iter()
             .map(|n| n.to_string())
             .collect::<Vec<_>>()
             .join(", "))
@@ -312,16 +314,18 @@ impl WasmInterpreter {
                     },
                     ValType::Vec(t) => match t {
                         VecType::V128 => Value::V128(0),
-                    }
+                    },
                     t => todo!("{:?}", t),
                 }),
         );
 
         for (i, op) in body.iter().enumerate() {
-            if let Some(l_idx) = frame
-                .run_instruction(op, self, store, 0)
-                .map_err(|e| e.wrap(ErrorReason::FailedInstruction { step: i, instr: op.clone() }))?
-            {
+            if let Some(l_idx) = frame.run_instruction(op, self, store, 0).map_err(|e| {
+                e.wrap(ErrorReason::FailedInstruction {
+                    step: i,
+                    instr: op.clone(),
+                })
+            })? {
                 if l_idx != 0 {
                     panic!("cannot branch out of function, expected 0, got {}", l_idx);
                 }

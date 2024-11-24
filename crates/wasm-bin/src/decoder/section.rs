@@ -1,7 +1,7 @@
-use crate::decoder::WasmDecoder;
-use crate::error::{DecodingError, DecodingErrorExt};
-use crate::instr::Expr;
-use crate::types::*;
+use super::WasmDecoder;
+use super::error::{DecodingError, DecodingErrorExt};
+use super::instr::Expr;
+use super::types::*;
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum ImportDesc {

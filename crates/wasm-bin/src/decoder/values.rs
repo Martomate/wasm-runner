@@ -1,4 +1,4 @@
-use crate::{decoder::WasmDecoder, error::DecodingError};
+use super::{WasmDecoder, error::DecodingError};
 
 impl<'a> WasmDecoder<'a> {
     pub fn read_u32(&mut self) -> u32 {
@@ -54,7 +54,7 @@ impl<'a> WasmDecoder<'a> {
 #[cfg(test)]
 mod tests {
     mod read_u32 {
-        use crate::WasmDecoder;
+        use crate::decoder::WasmDecoder;
 
         #[test]
         fn small_positive() {
@@ -73,7 +73,7 @@ mod tests {
     }
 
     mod read_i32 {
-        use crate::WasmDecoder;
+        use crate::decoder::WasmDecoder;
 
         #[test]
         fn small_positive() {

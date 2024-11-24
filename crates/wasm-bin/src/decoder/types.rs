@@ -1,4 +1,4 @@
-use crate::{decoder::WasmDecoder, error::DecodingError};
+use super::{WasmDecoder, error::DecodingError};
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub enum NumType {
