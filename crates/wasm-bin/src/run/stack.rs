@@ -699,8 +699,8 @@ impl StackFrame {
                         handler: f,
                     } = &context.imports[*f_idx as usize];
 
-                    let num_params = t.params.0.len();
-                    let num_returns = t.returns.0.len();
+                    let num_params = t.params.len();
+                    let num_returns = t.returns.len();
 
                     let params = self.split_off(self.len() - num_params)?;
                     let returns = f(&params);
@@ -726,20 +726,20 @@ impl StackFrame {
                         .map(|c| &c.func)
                         .expect("no functions exist");
 
-                    let params = self.pop_many(func.params.0.len())?;
+                    let params = self.pop_many(func.params.len())?;
                     let returns = context
                         .run_code(
                             locals.as_ref(),
                             &expr.0,
                             params,
-                            func.returns.0.len(),
+                            func.returns.len(),
                             store,
                         )
                         .map_err(|e| e.wrap(ErrorReason::FailedFunction { f_idx, name: None }))?;
-                    if returns.len() != func.returns.0.len() {
+                    if returns.len() != func.returns.len() {
                         panic!(
                             "wrong number of return values, expected: {}, got: {}",
-                            func.returns.0.len(),
+                            func.returns.len(),
                             returns.len()
                         );
                     }
@@ -760,19 +760,19 @@ impl StackFrame {
                             .map(|c| &c.func)
                             .unwrap();
 
-                        let params = self.pop_many(func.params.0.len())?;
+                        let params = self.pop_many(func.params.len())?;
                         let returns = context
-                            .run_code(locals, &expr.0, params, func.returns.0.len(), store)
+                            .run_code(locals, &expr.0, params, func.returns.len(), store)
                             .map_err(|e| {
                                 e.wrap(ErrorReason::FailedFunction {
                                     f_idx: a,
                                     name: None,
                                 })
                             })?;
-                        if returns.len() != func.returns.0.len() {
+                        if returns.len() != func.returns.len() {
                             panic!(
                                 "wrong number of return values, expected: {}, got: {}",
-                                func.returns.0.len(),
+                                func.returns.len(),
                                 returns.len()
                             );
                         }

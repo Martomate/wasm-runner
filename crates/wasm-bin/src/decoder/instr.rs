@@ -1,6 +1,6 @@
-use super::WasmDecoder;
 use super::error::DecodingError;
-use super::types::{RefType, ValType};
+use super::WasmDecoder;
+use crate::wasm::{RefType, ValType};
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct Expr(pub Vec<Instr>);
@@ -260,7 +260,7 @@ pub enum Instr {
 
     I8x16Shuffle([u8; 16]),
     I8x16Swizzle,
-    
+
     I8x16Splat,
     I16x8Splat,
     I32x4Splat,
@@ -1004,7 +1004,9 @@ impl<'a> WasmDecoder<'a> {
             0x09 => Instr::V128Load32Splat(self.read_memarg()?),
             0x0A => Instr::V128Load64Splat(self.read_memarg()?),
             0x0B => Instr::V128Store(self.read_memarg()?),
-            0x0C => Instr::V128Const(i128::from_le_bytes(<[u8; 16]>::try_from(self.read_bytes(16)).unwrap())),
+            0x0C => Instr::V128Const(i128::from_le_bytes(
+                <[u8; 16]>::try_from(self.read_bytes(16)).unwrap(),
+            )),
             0x0D => Instr::I8x16Shuffle(<[u8; 16]>::try_from(self.read_bytes(16)).unwrap()),
             0x0E => Instr::I8x16Swizzle,
             0x0F => Instr::I8x16Splat,

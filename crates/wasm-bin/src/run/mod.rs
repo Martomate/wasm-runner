@@ -1,8 +1,15 @@
 use std::iter;
 
+use crate::wasm::ExportDesc;
+use crate::wasm::FuncType;
+use crate::wasm::ImportDesc;
+use crate::wasm::NumType;
+use crate::wasm::RefType;
+use crate::wasm::ValType;
+use crate::wasm::VecType;
+
 use super::decoder::instr::Instr;
 use super::decoder::section::*;
-use super::decoder::types::{FuncType, NumType, RefType, TableType, ValType, VecType};
 use super::decoder::WasmModule;
 
 mod error;
@@ -56,7 +63,7 @@ impl Store {
         let mut memories = Vec::new();
         if let Some(ref mem) = wasm.memory_section {
             for m in mem.memories.iter() {
-                let limits = m.0.clone();
+                let limits = m.clone().limits;
                 memories.push(WasmMemory {
                     bytes: iter::repeat(0)
                         .take((limits.min() as usize) << 16)
@@ -113,13 +120,12 @@ impl Store {
         let mut tables: Vec<WasmTable> = tables
             .iter()
             .map(|table| {
-                let TableType(t, l) = table;
-                let value: Ref = match t {
+                let value: Ref = match table.ref_type {
                     RefType::FuncRef => Ref::Func(0),
-                    t => todo!("{:?}", t),
+                    ref t => todo!("{:?}", t),
                 };
                 WasmTable {
-                    elems: iter::repeat(value).take(l.min() as usize).collect(),
+                    elems: iter::repeat(value).take(table.limits.min() as usize).collect(),
                 }
             })
             .collect();
@@ -179,7 +185,7 @@ impl WasmInterpreter {
         let import = self.wasm.get_import_by_name(mod_name, name).expect("unknown import");
 
         let f = match import.desc {
-            ImportDesc::TypeIdx(t_idx) => self.wasm.get_function_type(t_idx).unwrap(),
+            ImportDesc::Func(t_idx) => self.wasm.get_function_type(t_idx.0).unwrap(),
             _ => panic!("import must be for a function"),
         };
 
@@ -199,10 +205,10 @@ impl WasmInterpreter {
             .wasm
             .get_export_by_name(function_name)
             .ok_or("unknown function")?;
-        let ExportDesc::Func(function_idx) = export.desc else {
+        let ExportDesc::Func(ref function_idx) = export.desc else {
             panic!("not a function");
         };
-        let exported_function_idx = function_idx - self.wasm.num_imports() as u32;
+        let exported_function_idx = function_idx.0 - self.wasm.num_imports() as u32;
 
         let exported_function_type_idx = self
             .wasm
@@ -214,7 +220,7 @@ impl WasmInterpreter {
             .get_function_type(exported_function_type_idx)
             .unwrap();
 
-        let param_types = function.params.0.clone();
+        let param_types = function.params.clone();
         if param_types.len() != parameters.len() {
             panic!(
                 "expected {} parameters, but got {}",
@@ -237,7 +243,7 @@ impl WasmInterpreter {
             })
             .collect();
 
-        let return_types = function.returns.0.clone();
+        let return_types = function.returns.clone();
 
         let Code {
             func: (locals, body),
@@ -248,7 +254,7 @@ impl WasmInterpreter {
             .run_code(locals, &body.0, param_values, return_types.len(), store)
             .map_err(|e| {
                 e.wrap(ErrorReason::FailedFunction {
-                    f_idx: function_idx,
+                    f_idx: function_idx.0,
                     name: Some(function_name.to_string()),
                 })
             })

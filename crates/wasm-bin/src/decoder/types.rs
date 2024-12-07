@@ -1,73 +1,6 @@
+use crate::wasm::{FuncType, GlobalType, Limits, MemType, NumType, RefType, ResultType, TableType, ValType, VecType};
+
 use super::{WasmDecoder, error::DecodingError};
-
-#[derive(Debug, PartialEq, Eq, Clone)]
-pub enum NumType {
-    I32,
-    I64,
-    F32,
-    F64,
-}
-
-#[derive(Debug, PartialEq, Eq, Clone)]
-pub enum VecType {
-    V128,
-}
-
-#[derive(Debug, PartialEq, Eq, Clone)]
-pub enum RefType {
-    FuncRef,
-    ExternRef,
-}
-
-#[derive(Debug, PartialEq, Eq, Clone)]
-pub enum ValType {
-    Num(NumType),
-    Vec(VecType),
-    Ref(RefType),
-}
-
-#[derive(Debug, PartialEq, Eq, Clone)]
-pub struct ResultType(pub Vec<ValType>);
-
-#[derive(Debug, PartialEq, Eq, Clone)]
-pub struct FuncType {
-    pub params: ResultType,
-    pub returns: ResultType,
-}
-
-#[derive(Debug, PartialEq, Eq, Clone)]
-pub enum Limits {
-    Min(u32),
-    MinMax(u32, u32),
-}
-
-impl Limits {
-    pub fn min(&self) -> u32 {
-        match self {
-            Limits::Min(v) => *v,
-            Limits::MinMax(v, _) => *v,
-        }
-    }
-
-    pub fn max(&self) -> Option<u32> {
-        match self {
-            Limits::Min(_) => None,
-            Limits::MinMax(_, v) => Some(*v),
-        }
-    }
-}
-
-#[derive(Debug, PartialEq, Eq, Clone)]
-pub struct MemoryType(pub Limits);
-
-#[derive(Debug, PartialEq, Eq, Clone)]
-pub struct TableType(pub RefType, pub Limits);
-
-#[derive(Debug, PartialEq, Eq, Clone)]
-pub struct GlobalType {
-    pub t: ValType,
-    pub mutable: bool,
-}
 
 impl<'a> WasmDecoder<'a> {
     pub fn read_functype(&mut self) -> Result<FuncType, DecodingError> {
@@ -86,7 +19,7 @@ impl<'a> WasmDecoder<'a> {
         for _ in 0..num_vals {
             val_types.push(self.read_val_type()?);
         }
-        Ok(ResultType(val_types))
+        Ok(val_types)
     }
 
     pub fn read_val_type(&mut self) -> Result<ValType, DecodingError> {
@@ -133,12 +66,12 @@ impl<'a> WasmDecoder<'a> {
 
         let limits = self.read_limits()?;
 
-        Ok(TableType(ref_type, limits))
+        Ok(TableType { ref_type, limits })
     }
 
-    pub fn read_memtype(&mut self) -> Result<MemoryType, DecodingError> {
+    pub fn read_memtype(&mut self) -> Result<MemType, DecodingError> {
         let limits = self.read_limits()?;
-        Ok(MemoryType(limits))
+        Ok(MemType { limits })
     }
 
     pub fn read_globaltype(&mut self) -> Result<GlobalType, DecodingError> {
@@ -149,7 +82,7 @@ impl<'a> WasmDecoder<'a> {
             b => Err(format!("invalid mut byte in globaltype: {}", b))?,
         };
         Ok(GlobalType {
-            t: val_type,
+            val_type,
             mutable,
         })
     }

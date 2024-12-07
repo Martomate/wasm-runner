@@ -1,6 +1,6 @@
 use std::iter;
 
-use crate::decoder::types::Limits;
+use crate::wasm::Limits;
 
 
 pub struct WasmMemory {

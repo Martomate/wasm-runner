@@ -1,15 +1,8 @@
+use crate::wasm::{ExportDesc, FuncIdx, FuncType, GlobalIdx, GlobalType, ImportDesc, MemIdx, MemType, RefType, TableIdx, TableType, TypeIdx, ValType};
+
 use super::WasmDecoder;
 use super::error::{DecodingError, DecodingErrorExt};
 use super::instr::Expr;
-use super::types::*;
-
-#[derive(Debug, PartialEq, Eq, Clone)]
-pub enum ImportDesc {
-    TypeIdx(u32),
-    Table(TableType),
-    Memory(MemoryType),
-    Global(GlobalType),
-}
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct ImportType {
@@ -24,27 +17,19 @@ pub struct Export {
     pub desc: ExportDesc,
 }
 
-#[derive(Debug, PartialEq, Eq, Clone)]
-pub enum ExportDesc {
-    Func(u32),
-    Table(u32),
-    Mem(u32),
-    Global(u32),
-}
-
 #[derive(Debug, PartialEq, Clone)]
 pub struct Code {
     pub size: u32,
     pub func: (Vec<Locals>, Expr),
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct Data {
     pub init: Vec<u8>,
     pub mode: DataMode,
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub enum DataMode {
     Passive,
     Active { memory: u32, offset: Expr },
@@ -183,10 +168,10 @@ impl<'a> WasmDecoder<'a> {
     fn read_export(&mut self) -> Result<Export, DecodingError> {
         let name = self.read_name()?;
         let desc = match self.read_byte() {
-            0x00 => ExportDesc::Func(self.read_u32()),
-            0x01 => ExportDesc::Table(self.read_u32()),
-            0x02 => ExportDesc::Mem(self.read_u32()),
-            0x03 => ExportDesc::Global(self.read_u32()),
+            0x00 => ExportDesc::Func(FuncIdx(self.read_u32())),
+            0x01 => ExportDesc::Table(TableIdx(self.read_u32())),
+            0x02 => ExportDesc::Mem(MemIdx(self.read_u32())),
+            0x03 => ExportDesc::Global(GlobalIdx(self.read_u32())),
             b => Err(format!("invalid export desc variant: {}", b))?,
         };
         Ok(Export { name, desc })
@@ -251,9 +236,9 @@ impl<'a> WasmDecoder<'a> {
 
         let kind = self.read_byte();
         let desc = match kind {
-            0x00 => ImportDesc::TypeIdx(self.read_u32()),
+            0x00 => ImportDesc::Func(TypeIdx(self.read_u32())),
             0x01 => ImportDesc::Table(self.read_tabletype()?),
-            0x02 => ImportDesc::Memory(self.read_memtype()?),
+            0x02 => ImportDesc::Mem(self.read_memtype()?),
             0x03 => ImportDesc::Global(self.read_globaltype()?),
             _ => Err(format!("invalid importdesc kind: {}", kind))?,
         };
@@ -512,9 +497,9 @@ impl SectionDecoder for TableSection {
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct MemorySection {
-    pub memories: Vec<MemoryType>,
+    pub memories: Vec<MemType>,
 }
 
 impl SectionDecoder for MemorySection {
@@ -555,7 +540,7 @@ impl SectionDecoder for ExportSection {
     }
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone)]
 pub struct StartSection {
     pub func_idx: u32,
 }
@@ -594,7 +579,7 @@ impl SectionDecoder for CodeSection {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Clone)]
 pub struct DataSection {
     pub datas: Vec<Data>,
 }
