@@ -9,7 +9,11 @@ use instr::Expr;
 use section::*;
 use std::iter;
 
-use crate::wasm::{self, instr::{FloatType, IntType, LaneIdx}, DataIdx, ElemIdx, FuncIdx, FuncType, GlobalIdx, LabelIdx, LocalIdx, MemIdx, TableIdx, TypeIdx};
+use crate::wasm::{
+    self,
+    instr::{FloatType, IntType, LaneIdx},
+    DataIdx, ElemIdx, FuncIdx, GlobalIdx, LabelIdx, LocalIdx, MemIdx, Module, TableIdx, TypeIdx,
+};
 
 pub struct WasmDecoder<'a>(&'a [u8]);
 
@@ -119,7 +123,7 @@ impl<'a> WasmDecoder<'a> {
     }
 }
 
-pub fn decode_bytes(mut b: &[u8]) -> Result<WasmModule, String> {
+pub fn decode_bytes(mut b: &[u8]) -> Result<Module, String> {
     b = b
         .strip_prefix(&[0x00, 0x61, 0x73, 0x6d])
         .ok_or("missing magic bytes")?;
@@ -145,9 +149,7 @@ pub fn decode_bytes(mut b: &[u8]) -> Result<WasmModule, String> {
         wasm_file.add_section(section);
     }
 
-    wasm_file.to_new_model();
-
-    Ok(wasm_file)
+    Ok(wasm_file.to_new_model())
 }
 
 #[derive(Debug, PartialEq)]
@@ -206,41 +208,6 @@ impl WasmModule {
         }
     }
 
-    pub fn get_function_type_idx(&self, function_idx: u32) -> Option<u32> {
-        let s = self.function_section.as_ref()?;
-        s.type_ids.get(function_idx as usize).cloned()
-    }
-
-    pub fn get_function_type(&self, type_idx: u32) -> Option<&FuncType> {
-        let s = self.type_section.as_ref()?;
-        s.functions.get(type_idx as usize)
-    }
-
-    pub fn get_import_by_name(&self, mod_name: &str, name: &str) -> Option<&ImportType> {
-        let s = self.import_section.as_ref()?;
-        s.imports
-            .iter()
-            .find(|import| import.mod_name == mod_name && import.name == name)
-    }
-
-    pub fn get_export_by_name(&self, name: &str) -> Option<&Export> {
-        let s = self.export_section.as_ref()?;
-        s.exports.iter().find(|e| e.name == name)
-    }
-
-    pub fn get_code(&self, function_idx: u32) -> Option<&Code> {
-        let s = self.code_section.as_ref()?;
-        s.codes.get(function_idx as usize)
-    }
-
-    pub fn num_imports(&self) -> usize {
-        if let Some(s) = &self.import_section {
-            s.imports.len()
-        } else {
-            0
-        }
-    }
-
     pub fn to_new_model(&self) -> crate::wasm::Module {
         wasm::Module {
             types: self
@@ -254,10 +221,11 @@ impl WasmModule {
                 .map(|s| {
                     s.type_ids
                         .into_iter()
-                        .map(|f_idx| {
-                            let f_idx = f_idx - self.num_imports() as u32;
-                            let t_idx = self.get_function_type_idx(f_idx).ok_or_else(|| format!("function {f_idx} not found")).unwrap();
-                            let code = self.get_code(f_idx).unwrap().clone();
+                        .enumerate()
+                        .map(|(f_idx, t_idx)| {
+                            let code_section = self.code_section.as_ref().unwrap();
+                            let code = code_section.codes.get(f_idx).unwrap().clone();
+
                             let Code {
                                 size: _,
                                 func: (locals, Expr(body)),
@@ -417,20 +385,27 @@ fn map_instr(instr: &instr::Instr) -> wasm::instr::Instr {
     use instr::Instr as A;
     use wasm::instr as W;
     use wasm::instr::Instr as B;
-    
+
     match instr.clone() {
         A::Unreachable => B::Unreachable,
         A::Nop => B::Nop,
         A::Block(t, body) => B::Block(map_blocktype(t), body.iter().map(map_instr).collect()),
         A::Loop(t, body) => B::Loop(map_blocktype(t), body.iter().map(map_instr).collect()),
         A::IfElse(t, if_body, else_body) => B::IfElse(
-            map_blocktype(t), 
-            if_body.iter().map(map_instr).collect(), 
-            else_body.unwrap_or_default().iter().map(map_instr).collect(),
+            map_blocktype(t),
+            if_body.iter().map(map_instr).collect(),
+            else_body
+                .unwrap_or_default()
+                .iter()
+                .map(map_instr)
+                .collect(),
         ),
         A::Branch(l_idx) => B::Br(LabelIdx(l_idx)),
         A::BranchIf(l_idx) => B::BrIf(LabelIdx(l_idx)),
-        A::BranchTable(labels, default_label) => B::BrTable(labels.iter().cloned().map(LabelIdx).collect(), LabelIdx(default_label)),
+        A::BranchTable(labels, default_label) => B::BrTable(
+            labels.iter().cloned().map(LabelIdx).collect(),
+            LabelIdx(default_label),
+        ),
         A::Return => B::Return,
         A::Call(f_idx) => B::Call(FuncIdx(f_idx)),
         A::CallIndirect(tab_idx, t_idx) => B::CallIndirect(TableIdx(tab_idx), TypeIdx(t_idx)),
@@ -542,7 +517,7 @@ fn map_instr(instr: &instr::Instr) -> wasm::instr::Instr {
         A::F32Trunc => B::FUnOp(FloatType::F32, W::FUnOp::Trunc),
         A::F32Nearest => B::FUnOp(FloatType::F32, W::FUnOp::Nearest),
         A::F32Sqrt => B::FUnOp(FloatType::F32, W::FUnOp::Sqrt),
-        
+
         A::F32Add => B::FBinOp(FloatType::F32, W::FBinOp::Add),
         A::F32Sub => B::FBinOp(FloatType::F32, W::FBinOp::Sub),
         A::F32Mul => B::FBinOp(FloatType::F32, W::FBinOp::Mul),

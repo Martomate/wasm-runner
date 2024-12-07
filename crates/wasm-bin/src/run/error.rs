@@ -1,6 +1,6 @@
 use std::{error::Error, fmt::Display};
 
-use crate::decoder::instr::Instr;
+use crate::wasm::instr::Instr;
 
 pub struct InterpreterError {
     reason: ErrorReason,

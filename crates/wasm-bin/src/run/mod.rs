@@ -1,16 +1,16 @@
 use std::iter;
 
+use crate::wasm::instr::Instr;
+use crate::wasm::DataMode;
+use crate::wasm::ElemMode;
 use crate::wasm::ExportDesc;
 use crate::wasm::FuncType;
 use crate::wasm::ImportDesc;
+use crate::wasm::Module;
 use crate::wasm::NumType;
 use crate::wasm::RefType;
 use crate::wasm::ValType;
 use crate::wasm::VecType;
-
-use super::decoder::instr::Instr;
-use super::decoder::section::*;
-use super::decoder::WasmModule;
 
 mod error;
 mod mem;
@@ -42,7 +42,7 @@ enum Ref {
 }
 
 pub struct WasmInterpreter {
-    wasm: WasmModule,
+    wasm: Module,
     imports: Vec<ExternalFunctionBinding>,
 }
 
@@ -59,103 +59,86 @@ impl Store {
 }
 
 impl Store {
-    pub fn create(wasm: &WasmModule) -> Self {
+    pub fn create(wasm: &Module) -> Self {
         let mut memories = Vec::new();
-        if let Some(ref mem) = wasm.memory_section {
-            for m in mem.memories.iter() {
-                let limits = m.clone().limits;
-                memories.push(WasmMemory {
-                    bytes: iter::repeat(0)
-                        .take((limits.min() as usize) << 16)
-                        .collect(),
-                    limits,
-                });
-            }
+
+        for m in wasm.mems.iter() {
+            let limits = m.mem_type.limits.clone();
+            memories.push(WasmMemory {
+                bytes: iter::repeat(0)
+                    .take((limits.min() as usize) << 16)
+                    .collect(),
+                limits,
+            });
         }
-        if let Some(ref data) = wasm.data_section {
-            for d in data.datas.iter() {
-                if let DataMode::Active { memory, offset } = &d.mode {
-                    if offset.0.len() != 1 {
-                        panic!("expected single instr");
-                    }
-                    let offset = match offset.0[0].clone() {
-                        Instr::I32Const(v) => v,
-                        instr => panic!("unexpected instr: {:?}", instr),
-                    };
-                    let offset = offset as u32;
-                    for (i, v) in d.init.iter().enumerate() {
-                        memories[*memory as usize].write_byte(offset + i as u32, *v);
-                    }
+        for d in wasm.datas.iter() {
+            if let DataMode::Active { memory, offset } = &d.mode {
+                if offset.len() != 1 {
+                    panic!("expected single instr");
+                }
+                let offset = match offset[0].clone() {
+                    Instr::I32Const(v) => v,
+                    instr => panic!("unexpected instr: {:?}", instr),
+                };
+                let offset = offset as u32;
+                for (i, v) in d.init.iter().enumerate() {
+                    memories[memory.0 as usize].write_byte(offset + i as u32, *v);
                 }
             }
         }
 
         let globals: Vec<WasmGlobal> = wasm
-            .global_section
-            .clone()
-            .unwrap_or_else(|| GlobalSection { globals: vec![] })
             .globals
             .iter()
-            .map(|(g, e)| {
-                if e.0.len() != 1 {
+            .map(|g| {
+                if g.init.len() != 1 {
                     panic!("global did not have exactly 1 instruction, which is not supported yet");
                 }
-                let value: Value = match &e.0[0] {
-                    Instr::I32Const(v) => Value::I32(*v),
+                let value: Value = match &g.init[0] {
+                    Instr::I32Const(v) => Value::I32(*v as i32),
                     i => panic!("unsupported instr for global: {:?}", i),
                 };
                 WasmGlobal {
-                    mutable: g.mutable,
+                    mutable: g.global_type.mutable,
                     value,
                 }
             })
             .collect();
 
-        let tables = wasm
-            .table_section
-            .clone()
-            .unwrap_or_else(|| TableSection { tables: vec![] })
-            .tables;
-
-        let mut tables: Vec<WasmTable> = tables
+        let mut tables: Vec<WasmTable> = wasm.tables
             .iter()
             .map(|table| {
-                let value: Ref = match table.ref_type {
+                let value: Ref = match table.table_type.ref_type {
                     RefType::FuncRef => Ref::Func(0),
                     ref t => todo!("{:?}", t),
                 };
                 WasmTable {
-                    elems: iter::repeat(value).take(table.limits.min() as usize).collect(),
+                    elems: iter::repeat(value).take(table.table_type.limits.min() as usize).collect(),
                 }
             })
             .collect();
 
-        let elements = wasm
-            .element_section
-            .clone()
-            .unwrap_or_else(|| ElementSection { elements: vec![] })
-            .elements;
-        for e in elements {
-            if let ElementMode::Active { table, offset } = e.mode {
-                if offset.0.len() != 1 {
+        for e in &wasm.elems {
+            if let ElemMode::Active { table_idx, offset } = &e.mode {
+                if offset.len() != 1 {
                     panic!(
                         "expected 1 instruction for elem offset eval, but got {} ",
-                        offset.0.len()
+                        offset.len()
                     );
                 }
-                let offset = match &offset.0[0] {
+                let offset = match &offset[0] {
                     Instr::I32Const(v) => *v,
                     _ => panic!("unsupported instr for active elem"),
                 };
 
-                match &e.init {
-                    ElementInit::Implicit(fns) => {
-                        let table = &mut tables[table as usize];
-                        for (i, &f) in fns.iter().enumerate() {
-                            table.elems[i + offset as usize] = Ref::Func(f)
+                let table = &mut tables[table_idx.0 as usize];
+                for (i, instrs) in e.init.iter().enumerate() {
+                    match instrs.as_slice() {
+                        [Instr::FuncRef(f)] => {
+                            table.elems[i + offset as usize] = Ref::Func(f.0);
                         }
+                        _ => todo!(),
                     }
-                    ElementInit::Explicit(_) => todo!(),
                 }
             }
         }
@@ -169,7 +152,7 @@ impl Store {
 }
 
 impl WasmInterpreter {
-    pub fn new(wasm: WasmModule) -> Self {
+    pub fn new(wasm: Module) -> Self {
         Self {
             wasm,
             imports: Vec::new(),
@@ -182,10 +165,10 @@ impl WasmInterpreter {
         name: &str,
         handler: fn(&[Value]) -> Vec<Value>,
     ) {
-        let import = self.wasm.get_import_by_name(mod_name, name).expect("unknown import");
+        let import = self.wasm.imports.iter().find(|im| im.module == mod_name && im.name == name).expect("unknown import");
 
         let f = match import.desc {
-            ImportDesc::Func(t_idx) => self.wasm.get_function_type(t_idx.0).unwrap(),
+            ImportDesc::Func(t_idx) => self.wasm.types.get(t_idx.0 as usize).unwrap(),
             _ => panic!("import must be for a function"),
         };
 
@@ -203,21 +186,22 @@ impl WasmInterpreter {
     ) -> Result<String, String> {
         let export = self
             .wasm
-            .get_export_by_name(function_name)
+            .exports.iter().find(|e| e.name == function_name)
             .ok_or("unknown function")?;
         let ExportDesc::Func(ref function_idx) = export.desc else {
             panic!("not a function");
         };
-        let exported_function_idx = function_idx.0 - self.wasm.num_imports() as u32;
+        let exported_function_idx = function_idx.0 - self.wasm.imports.len() as u32;
 
-        let exported_function_type_idx = self
+        let exported_function = self
             .wasm
-            .get_function_type_idx(exported_function_idx)
+            .funcs.get(exported_function_idx as usize)
             .unwrap();
+        let exported_function_type_idx = exported_function.type_idx;
 
         let function = self
             .wasm
-            .get_function_type(exported_function_type_idx)
+            .types.get(exported_function_type_idx.0 as usize)
             .unwrap();
 
         let param_types = function.params.clone();
@@ -245,13 +229,8 @@ impl WasmInterpreter {
 
         let return_types = function.returns.clone();
 
-        let Code {
-            func: (locals, body),
-            size: _,
-        } = self.wasm.get_code(exported_function_idx).unwrap();
-
         let res = self
-            .run_code(locals, &body.0, param_values, return_types.len(), store)
+            .run_code(&exported_function.locals, &exported_function.body, param_values, return_types.len(), store)
             .map_err(|e| {
                 e.wrap(ErrorReason::FailedFunction {
                     f_idx: function_idx.0,
@@ -272,7 +251,7 @@ impl WasmInterpreter {
 
     fn run_code(
         &self,
-        locals: &[Locals],
+        locals: &[ValType],
         body: &[Instr],
         parameters: Vec<Value>,
         num_returns_values: usize,
@@ -283,7 +262,6 @@ impl WasmInterpreter {
         frame.push_all(
             locals
                 .iter()
-                .flat_map(|l| iter::repeat(l.t.clone()).take(l.n as usize))
                 .map(|t| match t {
                     ValType::Num(t) => match t {
                         NumType::I32 => Value::I32(0),

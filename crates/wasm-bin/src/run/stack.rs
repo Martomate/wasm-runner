@@ -3,7 +3,7 @@ use std::{
     ops::{Index, IndexMut},
 };
 
-use crate::decoder::instr::{BlockType, Instr, MemArg};
+use crate::wasm::instr::{BlockType, FBinOp, FRelOp, FUnOp, FloatType, IBinOp, IRelOp, IShape, ITestOp, IUnOp, Instr, IntType, MemArg, Signedness, VIBinOp, VIMinMaxOp, VIRelOp, VVUnOp};
 
 use super::{
     error::{ErrorReason, InterpreterError, StackError},
@@ -307,264 +307,480 @@ impl StackFrame {
         let tables = store.tables.as_mut_slice();
 
         match op {
-            Instr::LocalGet(idx) => self.push(self[*idx]),
-            Instr::LocalSet(idx) => self[*idx] = self.pop()?,
-            Instr::LocalTee(idx) => self[*idx] = self.top()?,
+            Instr::LocalGet(idx) => self.push(self[idx.0]),
+            Instr::LocalSet(idx) => self[idx.0] = self.pop()?,
+            Instr::LocalTee(idx) => self[idx.0] = self.top()?,
             Instr::GlobalGet(idx) => {
-                let global = &globals[*idx as usize];
+                let global = &globals[idx.0 as usize];
                 self.push(global.value);
             }
             Instr::GlobalSet(idx) => {
-                let global = &mut globals[*idx as usize];
+                let global = &mut globals[idx.0 as usize];
                 if !global.mutable {
                     panic!("may not set value of immutable global");
                 }
                 let value = self.pop()?;
                 global.value = value;
             }
-            Instr::I32Const(val) => self.push(Value::I32(*val)),
-            Instr::I64Const(val) => self.push(Value::I64(*val)),
+            Instr::I32Const(val) => self.push(Value::I32(*val as i32)),
+            Instr::I64Const(val) => self.push(Value::I64(*val as i64)),
             Instr::F32Const(val) => self.push(Value::F32(*val)),
             Instr::F64Const(val) => self.push(Value::F64(*val)),
             Instr::V128Const(val) => self.push(Value::V128(*val)),
-            Instr::I32Load(MemArg { align, offset }) => {
-                if *align > 2 {
-                    panic!("alignment may not exceed 2, got {}", align);
+            Instr::ILoad(int_type, MemArg { align, offset }) => {
+                match int_type {
+                    IntType::I32 => {
+                        if *align > 2 {
+                            panic!("alignment may not exceed 2, got {}", align);
+                        }
+                        let i = self.pop()?.as_i32()?;
+                        let ea = i as i64 + *offset as i64;
+                        if ea & ((1 << *align) - 1) != 0 {
+                            eprintln!(
+                                "WARNING: unaligned memory access: i32.load, align: {}, address: {}",
+                                align, ea
+                            );
+                        }
+                        let b = memories[0].read_bytes_fixed::<4>(ea as u32);
+                        self.push(Value::I32(i32::from_le_bytes(b)));
+                    }
+                    IntType::I64 => {
+                        if *align > 3 {
+                            panic!("alignment may not exceed 3, got {}", align);
+                        }
+                        let i = self.pop()?.as_i32()?;
+                        let ea = i as i64 + *offset as i64;
+                        if ea & ((1 << *align) - 1) != 0 {
+                            eprintln!(
+                                "WARNING: unaligned memory access: i64.load, align: {}, address: {}",
+                                align, ea
+                            );
+                        }
+                        let b = memories[0].read_bytes_fixed::<8>(ea as u32);
+                        self.push(Value::I64(i64::from_le_bytes(b)));
+                    }
                 }
-                let i = self.pop()?.as_i32()?;
-                let ea = i as i64 + *offset as i64;
-                if ea & ((1 << *align) - 1) != 0 {
-                    eprintln!(
-                        "WARNING: unaligned memory access: i32.load, align: {}, address: {}",
-                        align, ea
-                    );
-                }
-                let b = memories[0].read_bytes_fixed::<4>(ea as u32);
-                self.push(Value::I32(i32::from_le_bytes(b)));
             }
-            Instr::F32Load(MemArg { align, offset }) => {
-                if *align > 2 {
-                    panic!("alignment may not exceed 2, got {}", align);
+            Instr::FLoad(float_type, MemArg { align, offset }) => {
+                match float_type {
+                    FloatType::F32 => {
+                        if *align > 2 {
+                            panic!("alignment may not exceed 2, got {}", align);
+                        }
+                        let i = self.pop()?.as_i32()?;
+                        let ea = i as i64 + *offset as i64;
+                        if ea & ((1 << *align) - 1) != 0 {
+                            eprintln!(
+                                "WARNING: unaligned memory access: f32.load, align: {}, address: {}",
+                                align, ea
+                            );
+                        }
+                        let b = memories[0].read_bytes_fixed::<4>(ea as u32);
+                        self.push(Value::F32(f32::from_le_bytes(b)));
+                    }
+                    FloatType::F64 => {
+                        if *align > 3 {
+                            panic!("alignment may not exceed 3, got {}", align);
+                        }
+                        let i = self.pop()?.as_i32()?;
+                        let ea = i as i64 + *offset as i64;
+                        if ea & ((1 << *align) - 1) != 0 {
+                            eprintln!(
+                                "WARNING: unaligned memory access: f64.load, align: {}, address: {}",
+                                align, ea
+                            );
+                        }
+                        let b = memories[0].read_bytes_fixed::<8>(ea as u32);
+                        self.push(Value::F64(f64::from_le_bytes(b)));
+                    }
                 }
-                let i = self.pop()?.as_i32()?;
-                let ea = i as i64 + *offset as i64;
-                if ea & ((1 << *align) - 1) != 0 {
-                    eprintln!(
-                        "WARNING: unaligned memory access: f32.load, align: {}, address: {}",
-                        align, ea
-                    );
-                }
-                let b = memories[0].read_bytes_fixed::<4>(ea as u32);
-                self.push(Value::F32(f32::from_le_bytes(b)));
             }
-            Instr::I32Load8U(MemArg { align, offset }) => {
-                if *align != 0 {
-                    unimplemented!();
+            Instr::ILoad8(int_type, MemArg { align, offset }, signedness) => {
+                match int_type {
+                    IntType::I32 => {
+                        match signedness {
+                            Signedness::S => {
+                                if *align != 0 {
+                                    unimplemented!();
+                                }
+                                let i = self.pop()?.as_i32()?;
+                                let ea = i as i64 + *offset as i64;
+                                let b = memories[0].read_byte(ea as u32) as i8;
+                                self.push(Value::I32(b as i32));
+                            }
+                            Signedness::U => {
+                                if *align != 0 {
+                                    unimplemented!();
+                                }
+                                let i = self.pop()?.as_i32()?;
+                                let ea = i as i64 + *offset as i64;
+                                let b = memories[0].read_byte(ea as u32);
+                                self.push(Value::I32(b as i32));
+                            }
+                        }
+                    }
+                    IntType::I64 => todo!(),
                 }
-                let i = self.pop()?.as_i32()?;
-                let ea = i as i64 + *offset as i64;
-                let b = memories[0].read_byte(ea as u32);
-                self.push(Value::I32(b as i32));
             }
-            Instr::I32Load8S(MemArg { align, offset }) => {
-                if *align != 0 {
-                    unimplemented!();
+            Instr::IStore(int_type, MemArg { align, offset }) => {
+                match int_type {
+                    IntType::I32 => {
+                        if *align > 2 {
+                            panic!("alignment may not exceed 2, got {}", align);
+                        }
+                        let c = self.pop()?.as_i32()?;
+                        let i = self.pop()?.as_i32()?;
+                        let ea = i as i64 + *offset as i64;
+                        if ea & ((1 << *align) - 1) != 0 {
+                            eprintln!(
+                                "WARNING: unaligned memory access: i32.store, align: {}, address: {}",
+                                align, ea
+                            );
+                        }
+                        memories[0].write_bytes_fixed::<4>(ea as u32, c.to_le_bytes());
+                    }
+                    IntType::I64 => {
+                        if *align > 3 {
+                            panic!("alignment may not exceed 3, got {}", align);
+                        }
+                        let c = self.pop()?.as_i64()?;
+                        let i = self.pop()?.as_i32()?;
+                        let ea = i as i64 + *offset as i64;
+                        if ea & ((1 << *align) - 1) != 0 {
+                            eprintln!(
+                                "WARNING: unaligned memory access: i64.store, align: {}, address: {}",
+                                align, ea
+                            );
+                        }
+                        memories[0].write_bytes_fixed::<8>(ea as u32, c.to_le_bytes());
+                    }
                 }
-                let i = self.pop()?.as_i32()?;
-                let ea = i as i64 + *offset as i64;
-                let b = memories[0].read_byte(ea as u32) as i8;
-                self.push(Value::I32(b as i32));
             }
-            Instr::I64Load(MemArg { align, offset }) => {
-                if *align > 3 {
-                    panic!("alignment may not exceed 3, got {}", align);
+            Instr::IStore8(int_type, MemArg { align, offset }) => {
+                match int_type {
+                    IntType::I32 => {
+                        if *align > 2 {
+                            panic!("alignment may not exceed 2, got {}", align);
+                        }
+                        let c = (self.pop()?.as_i32()? & 0xff) as u8;
+                        let i = self.pop()?.as_i32()?;
+                        let ea = i as i64 + *offset as i64;
+                        if ea & ((1 << *align) - 1) != 0 {
+                            eprintln!(
+                                "WARNING: unaligned memory access: i32.store8, align: {}, address: {}",
+                                align, ea
+                            );
+                        }
+                        memories[0].write_byte(ea as u32, c);
+                    }
+                    IntType::I64 => todo!(),
                 }
-                let i = self.pop()?.as_i32()?;
-                let ea = i as i64 + *offset as i64;
-                if ea & ((1 << *align) - 1) != 0 {
-                    eprintln!(
-                        "WARNING: unaligned memory access: i64.load, align: {}, address: {}",
-                        align, ea
-                    );
-                }
-                let b = memories[0].read_bytes_fixed::<8>(ea as u32);
-                self.push(Value::I64(i64::from_le_bytes(b)));
             }
-            Instr::F64Load(MemArg { align, offset }) => {
-                if *align > 3 {
-                    panic!("alignment may not exceed 3, got {}", align);
+            Instr::IStore16(int_type, MemArg { align, offset }) => {
+                match int_type {
+                    IntType::I32 => {
+                        if *align > 2 {
+                            panic!("alignment may not exceed 2, got {}", align);
+                        }
+                        let c = (self.pop()?.as_i32()? & 0xffff) as u16;
+                        let i = self.pop()?.as_i32()?;
+                        let ea = i as i64 + *offset as i64;
+                        if ea & ((1 << *align) - 1) != 0 {
+                            eprintln!(
+                                "WARNING: unaligned memory access: i32.store16, align: {}, address: {}",
+                                align, ea
+                            );
+                        }
+                        memories[0].write_bytes_fixed::<2>(ea as u32, c.to_le_bytes());
+                    }
+                    IntType::I64 => todo!(),
                 }
-                let i = self.pop()?.as_i32()?;
-                let ea = i as i64 + *offset as i64;
-                if ea & ((1 << *align) - 1) != 0 {
-                    eprintln!(
-                        "WARNING: unaligned memory access: f64.load, align: {}, address: {}",
-                        align, ea
-                    );
-                }
-                let b = memories[0].read_bytes_fixed::<8>(ea as u32);
-                self.push(Value::F64(f64::from_le_bytes(b)));
             }
-            Instr::I32Store(MemArg { align, offset }) => {
-                if *align > 2 {
-                    panic!("alignment may not exceed 2, got {}", align);
+            Instr::IUnOp(int_type, op) => {
+                match int_type {
+                    IntType::I32 => {
+                        match op {
+                            IUnOp::Clz => self.run_unop_i32_s(|c1| Value::I32(c1.leading_zeros() as i32))?,
+                            IUnOp::Ctz => self.run_unop_i32_s(|c1| Value::I32(c1.trailing_zeros() as i32))?,
+                            IUnOp::PopCnt => todo!(),
+                        }
+                    }
+                    IntType::I64 => todo!(),
                 }
-                let c = self.pop()?.as_i32()?;
-                let i = self.pop()?.as_i32()?;
-                let ea = i as i64 + *offset as i64;
-                if ea & ((1 << *align) - 1) != 0 {
-                    eprintln!(
-                        "WARNING: unaligned memory access: i32.store, align: {}, address: {}",
-                        align, ea
-                    );
-                }
-                memories[0].write_bytes_fixed::<4>(ea as u32, c.to_le_bytes());
             }
-            Instr::I32Store8(MemArg { align, offset }) => {
-                if *align > 2 {
-                    panic!("alignment may not exceed 2, got {}", align);
+            Instr::FUnOp(float_type, op) => {
+                match float_type {
+                    FloatType::F32 => {
+                        match op {
+                            FUnOp::Abs => self.run_unop_f32(|c1| Value::F32(c1.abs()))?,
+                            FUnOp::Neg => self.run_unop_f32(|c1| Value::F32(-c1))?,
+                            _ => todo!(),
+                        }
+                    }
+                    FloatType::F64 => {
+                        match op {
+                            FUnOp::Abs => self.run_unop_f64(|c1| Value::F64(c1.abs()))?,
+                            FUnOp::Neg => self.run_unop_f64(|c1| Value::F64(-c1))?,
+                            _ => todo!(),
+                        }
+                    }
                 }
-                let c = (self.pop()?.as_i32()? & 0xff) as u8;
-                let i = self.pop()?.as_i32()?;
-                let ea = i as i64 + *offset as i64;
-                if ea & ((1 << *align) - 1) != 0 {
-                    eprintln!(
-                        "WARNING: unaligned memory access: i32.store8, align: {}, address: {}",
-                        align, ea
-                    );
+            }
+            Instr::IBinOp(int_type, op) => {
+                match int_type {
+                    IntType::I32 => {
+                        match op {
+                            IBinOp::Add => self.run_binop_i32_s(|c1, c2| Value::I32(c1.wrapping_add(c2)))?,
+                            IBinOp::Sub => self.run_binop_i32_s(|c1, c2| Value::I32(c1.wrapping_sub(c2)))?,
+                            IBinOp::Mul => self.run_binop_i32_s(|c1, c2| Value::I32(c1.wrapping_mul(c2)))?,
+                            IBinOp::Div(_) => todo!(),
+                            IBinOp::Rem(_) => todo!(),
+                            IBinOp::And => self.run_binop_i32_s(|c1, c2| Value::I32(c1 & c2))?,
+                            IBinOp::Or => self.run_binop_i32_s(|c1, c2| Value::I32(c1 | c2))?,
+                            IBinOp::Xor => self.run_binop_i32_s(|c1, c2| Value::I32(c1 ^ c2))?,
+                            IBinOp::Shl => self.run_binop_i32_s(|c1, c2| Value::I32(c1 << (c2 & 31)))?,
+                            IBinOp::Shr(s) => {
+                                match s {
+                                    Signedness::S => todo!(),
+                                    Signedness::U => self.run_binop_i32_u(|c1, c2| Value::I32((c1 >> (c2 & 31)) as i32))?,
+                                }
+                            }
+                            IBinOp::Rotl => self.run_binop_i32_s(|c1, c2| Value::I32(c1.rotate_left(c2 as u32 & 31)))?,
+                            IBinOp::Rotr => todo!(),
+                        }
+                    }
+                    IntType::I64 => {
+                        match op {
+                            IBinOp::Add => self.run_binop_i64_s(|c1, c2| Value::I64(c1.wrapping_add(c2)))?,
+                            IBinOp::Sub => self.run_binop_i64_s(|c1, c2| Value::I64(c1.wrapping_sub(c2)))?,
+                            IBinOp::Mul => self.run_binop_i64_s(|c1, c2| Value::I64(c1.wrapping_mul(c2)))?,
+                            IBinOp::Div(_) => todo!(),
+                            IBinOp::Rem(_) => todo!(),
+                            IBinOp::And => self.run_binop_i64_s(|c1, c2| Value::I64(c1 & c2))?,
+                            IBinOp::Or => self.run_binop_i64_s(|c1, c2| Value::I64(c1 | c2))?,
+                            IBinOp::Xor => self.run_binop_i64_s(|c1, c2| Value::I64(c1 ^ c2))?,
+                            IBinOp::Shl => self.run_binop_i64_s(|c1, c2| Value::I64(c1 << (c2 & 63)))?,
+                            IBinOp::Shr(s) => {
+                                match s {
+                                    Signedness::S => todo!(),
+                                    Signedness::U => self.run_binop_i64_u(|c1, c2| Value::I64((c1 >> (c2 & 63)) as i64))?
+                                }
+                            }
+                            IBinOp::Rotl => todo!(),
+                            IBinOp::Rotr => todo!(),
+                        }
+                    }
                 }
-                memories[0].write_byte(ea as u32, c);
             }
-            Instr::I32Store16(MemArg { align, offset }) => {
-                if *align > 2 {
-                    panic!("alignment may not exceed 2, got {}", align);
+            Instr::FBinOp(float_type, op) => {
+                match float_type {
+                    FloatType::F32 => {
+                        match op {
+                            FBinOp::Add => self.run_binop_f32(|c1, c2| Value::F32(c1 + c2))?,
+                            FBinOp::Sub => self.run_binop_f32(|c1, c2| Value::F32(c1 - c2))?,
+                            FBinOp::Mul => self.run_binop_f32(|c1, c2| Value::F32(c1 * c2))?,
+                            FBinOp::Div => self.run_binop_f32(|c1, c2| Value::F32(c1 / c2))?,
+                            _ => todo!(),
+                        }
+                    }
+                    FloatType::F64 => {
+                        match op {
+                            FBinOp::Add => self.run_binop_f64(|c1, c2| Value::F64(c1 + c2))?,
+                            FBinOp::Sub => self.run_binop_f64(|c1, c2| Value::F64(c1 - c2))?,
+                            FBinOp::Mul => self.run_binop_f64(|c1, c2| Value::F64(c1 * c2))?,
+                            FBinOp::Div => self.run_binop_f64(|c1, c2| Value::F64(c1 / c2))?,
+                            _ => todo!(),
+                        }
+                    }
                 }
-                let c = (self.pop()?.as_i32()? & 0xffff) as u16;
-                let i = self.pop()?.as_i32()?;
-                let ea = i as i64 + *offset as i64;
-                if ea & ((1 << *align) - 1) != 0 {
-                    eprintln!(
-                        "WARNING: unaligned memory access: i32.store16, align: {}, address: {}",
-                        align, ea
-                    );
+            }
+            Instr::ITestOp(int_type, op) => {
+                match int_type {
+                    IntType::I32 => {
+                        match op {
+                            ITestOp::Eqz => self.run_unop_i32_s(|c1| Value::bool_to_i32(c1 == 0))?,
+                        }
+                    }
+                    IntType::I64 => {
+                        match op {
+                            ITestOp::Eqz => todo!(),
+                        }
+                    }
                 }
-                memories[0].write_bytes_fixed::<2>(ea as u32, c.to_le_bytes());
             }
-            Instr::I64Store(MemArg { align, offset }) => {
-                if *align > 3 {
-                    panic!("alignment may not exceed 3, got {}", align);
+            Instr::IRelOp(int_type, op) => {
+                match int_type {
+                    IntType::I32 => {
+                        match op {
+                            IRelOp::Eq => self.run_binop_i32_s(|c1, c2| Value::bool_to_i32(c1 == c2))?,
+                            IRelOp::Ne => self.run_binop_i32_s(|c1, c2| Value::bool_to_i32(c1 != c2))?,
+                            IRelOp::Gt(s) => {
+                                match s {
+                                    Signedness::S => self.run_binop_i32_s(|c1, c2| Value::bool_to_i32(c1 > c2))?,
+                                    Signedness::U => self.run_binop_i32_u(|c1, c2| Value::bool_to_i32(c1 > c2))?,
+                                }
+                            }
+                            IRelOp::Ge(s) => {
+                                match s {
+                                    Signedness::S => self.run_binop_i32_s(|c1, c2| Value::bool_to_i32(c1 >= c2))?,
+                                    Signedness::U => self.run_binop_i32_u(|c1, c2| Value::bool_to_i32(c1 >= c2))?,
+                                }
+                            }
+                            IRelOp::Lt(s) => {
+                                match s {
+                                    Signedness::S => self.run_binop_i32_s(|c1, c2| Value::bool_to_i32(c1 < c2))?,
+                                    Signedness::U => self.run_binop_i32_u(|c1, c2| Value::bool_to_i32(c1 < c2))?,
+                                }
+                            }
+                            IRelOp::Le(s) => {
+                                match s {
+                                    Signedness::S => self.run_binop_i32_s(|c1, c2| Value::bool_to_i32(c1 <= c2))?,
+                                    Signedness::U => self.run_binop_i32_u(|c1, c2| Value::bool_to_i32(c1 <= c2))?,
+                                }
+                            }
+                        }
+                    }
+                    IntType::I64 => {
+                        match op {
+                            IRelOp::Eq => todo!(),
+                            IRelOp::Ne => todo!(),
+                            _ => todo!(),
+                        }
+                    }
                 }
-                let c = self.pop()?.as_i64()?;
-                let i = self.pop()?.as_i32()?;
-                let ea = i as i64 + *offset as i64;
-                if ea & ((1 << *align) - 1) != 0 {
-                    eprintln!(
-                        "WARNING: unaligned memory access: i64.store, align: {}, address: {}",
-                        align, ea
-                    );
+            }
+            Instr::FRelOp(float_type, op) => {
+                match float_type {
+                    FloatType::F32 => {
+                        match op {
+                            FRelOp::Eq => todo!(),
+                            FRelOp::Ne => self.run_binop_f32(|c1, c2| Value::bool_to_i32(c1 != c2))?,
+                            FRelOp::Gt => self.run_binop_f32(|c1, c2| Value::bool_to_i32(c1 > c2))?,
+                            FRelOp::Ge => self.run_binop_f32(|c1, c2| Value::bool_to_i32(c1 >= c2))?,
+                            FRelOp::Lt => self.run_binop_f32(|c1, c2| Value::bool_to_i32(c1 < c2))?,
+                            FRelOp::Le => self.run_binop_f32(|c1, c2| Value::bool_to_i32(c1 <= c2))?,
+                        }
+                    }
+                    FloatType::F64 => {
+                        match op {
+                            FRelOp::Eq => todo!(),
+                            FRelOp::Ne => self.run_binop_f64(|c1, c2| Value::bool_to_i32(c1 != c2))?,
+                            FRelOp::Gt => self.run_binop_f64(|c1, c2| Value::bool_to_i32(c1 > c2))?,
+                            FRelOp::Ge => self.run_binop_f64(|c1, c2| Value::bool_to_i32(c1 >= c2))?,
+                            FRelOp::Lt => self.run_binop_f64(|c1, c2| Value::bool_to_i32(c1 < c2))?,
+                            FRelOp::Le => self.run_binop_f64(|c1, c2| Value::bool_to_i32(c1 <= c2))?,
+                        }
+                    }
                 }
-                memories[0].write_bytes_fixed::<8>(ea as u32, c.to_le_bytes());
             }
-            Instr::I32Add => self.run_binop_i32_s(|c1, c2| Value::I32(c1.wrapping_add(c2)))?,
-            Instr::I64Add => self.run_binop_i64_s(|c1, c2| Value::I64(c1.wrapping_add(c2)))?,
-            Instr::F32Add => self.run_binop_f32(|c1, c2| Value::F32(c1 + c2))?,
-            Instr::F64Add => self.run_binop_f64(|c1, c2| Value::F64(c1 + c2))?,
-            Instr::I32Sub => self.run_binop_i32_s(|c1, c2| Value::I32(c1.wrapping_sub(c2)))?,
-            Instr::I64Sub => self.run_binop_i64_s(|c1, c2| Value::I64(c1.wrapping_sub(c2)))?,
-            Instr::F32Sub => self.run_binop_f32(|c1, c2| Value::F32(c1 - c2))?,
-            Instr::F64Sub => self.run_binop_f64(|c1, c2| Value::F64(c1 - c2))?,
-            Instr::I32Mul => self.run_binop_i32_s(|c1, c2| Value::I32(c1.wrapping_mul(c2)))?,
-            Instr::I64Mul => self.run_binop_i64_s(|c1, c2| Value::I64(c1.wrapping_mul(c2)))?,
-            Instr::F32Mul => self.run_binop_f32(|c1, c2| Value::F32(c1 * c2))?,
-            Instr::F64Mul => self.run_binop_f64(|c1, c2| Value::F64(c1 * c2))?,
-            Instr::F32Div => self.run_binop_f32(|c1, c2| Value::F32(c1 / c2))?,
-            Instr::F64Div => self.run_binop_f64(|c1, c2| Value::F64(c1 / c2))?,
-            Instr::I32Eqz => self.run_unop_i32_s(|c1| Value::bool_to_i32(c1 == 0))?,
-            Instr::I32Eq => self.run_binop_i32_s(|c1, c2| Value::bool_to_i32(c1 == c2))?,
-            Instr::I32Ne => self.run_binop_i32_s(|c1, c2| Value::bool_to_i32(c1 != c2))?,
-            Instr::F32Ne => self.run_binop_f32(|c1, c2| Value::bool_to_i32(c1 != c2))?,
-            Instr::F64Ne => self.run_binop_f64(|c1, c2| Value::bool_to_i32(c1 != c2))?,
-            Instr::I32GtU => self.run_binop_i32_u(|c1, c2| Value::bool_to_i32(c1 > c2))?,
-            Instr::I32GtS => self.run_binop_i32_s(|c1, c2| Value::bool_to_i32(c1 > c2))?,
-            Instr::F32Gt => self.run_binop_f32(|c1, c2| Value::bool_to_i32(c1 > c2))?,
-            Instr::F64Gt => self.run_binop_f64(|c1, c2| Value::bool_to_i32(c1 > c2))?,
-            Instr::I32GeU => self.run_binop_i32_u(|c1, c2| Value::bool_to_i32(c1 >= c2))?,
-            Instr::I32GeS => self.run_binop_i32_s(|c1, c2| Value::bool_to_i32(c1 >= c2))?,
-            Instr::F32Ge => self.run_binop_f32(|c1, c2| Value::bool_to_i32(c1 >= c2))?,
-            Instr::F64Ge => self.run_binop_f64(|c1, c2| Value::bool_to_i32(c1 >= c2))?,
-            Instr::I32LtU => self.run_binop_i32_u(|c1, c2| Value::bool_to_i32(c1 < c2))?,
-            Instr::I32LtS => self.run_binop_i32_s(|c1, c2| Value::bool_to_i32(c1 < c2))?,
-            Instr::F32Lt => self.run_binop_f32(|c1, c2| Value::bool_to_i32(c1 < c2))?,
-            Instr::F64Lt => self.run_binop_f64(|c1, c2| Value::bool_to_i32(c1 < c2))?,
-            Instr::I32LeU => self.run_binop_i32_u(|c1, c2| Value::bool_to_i32(c1 <= c2))?,
-            Instr::I32LeS => self.run_binop_i32_s(|c1, c2| Value::bool_to_i32(c1 <= c2))?,
-            Instr::I32And => self.run_binop_i32_s(|c1, c2| Value::I32(c1 & c2))?,
-            Instr::I64And => self.run_binop_i64_s(|c1, c2| Value::I64(c1 & c2))?,
-            Instr::I32Or => self.run_binop_i32_s(|c1, c2| Value::I32(c1 | c2))?,
-            Instr::I64Or => self.run_binop_i64_s(|c1, c2| Value::I64(c1 | c2))?,
-            Instr::I32Xor => self.run_binop_i32_s(|c1, c2| Value::I32(c1 ^ c2))?,
-            Instr::I64Xor => self.run_binop_i64_s(|c1, c2| Value::I64(c1 ^ c2))?,
-            Instr::I32ShrU => {
-                self.run_binop_i32_u(|c1, c2| Value::I32((c1 >> (c2 & 31)) as i32))?
-            }
-            Instr::I64ShrU => {
-                self.run_binop_i64_u(|c1, c2| Value::I64((c1 >> (c2 & 63)) as i64))?
-            }
-            Instr::I32Shl => self.run_binop_i32_s(|c1, c2| Value::I32(c1 << (c2 & 31)))?,
-            Instr::I64Shl => self.run_binop_i64_s(|c1, c2| Value::I64(c1 << (c2 & 63)))?,
-            Instr::I32Rotl => {
-                self.run_binop_i32_s(|c1, c2| Value::I32(c1.rotate_left(c2 as u32 & 31)))?
-            }
-            Instr::I32Clz => self.run_unop_i32_s(|c1| Value::I32(c1.leading_zeros() as i32))?,
-            Instr::I32Ctz => self.run_unop_i32_s(|c1| Value::I32(c1.trailing_zeros() as i32))?,
-            Instr::F32Abs => self.run_unop_f32(|c1| Value::F32(c1.abs()))?,
-            Instr::F64Abs => self.run_unop_f64(|c1| Value::F64(c1.abs()))?,
-            Instr::F32Neg => self.run_unop_f32(|c1| Value::F32(-c1))?,
-            Instr::F64Neg => self.run_unop_f64(|c1| Value::F64(-c1))?,
             Instr::I32Extend8S => self.run_unop_i32_s(|c1| Value::I32(c1 as i8 as i32))?,
-            Instr::I64ExtendI32U => self.run_unop_i32_s(|c1| Value::I64(c1 as u32 as i64))?,
+            Instr::I64ExtendI32(s) => {
+                match s {
+                    Signedness::S => todo!(),
+                    Signedness::U => self.run_unop_i32_s(|c1| Value::I64(c1 as u32 as i64))?,
+                }
+            }
             Instr::I32WrapI64 => self.run_unop_i64_s(|c1| Value::I32(c1 as i32))?,
-            Instr::I32TruncF64S => self.run_unop_f64(|c1| {
-                let c = c1.trunc() as i64;
-                assert!(c >= i32::MIN as i64, "I32TruncF64S: value is too low");
-                assert!(c <= i32::MAX as i64, "I32TruncF64S: value is too high");
-                Value::I32(c as i32)
-            })?,
-            Instr::F64ConvertI32S => self.run_unop_i32_s(|c1| Value::F64(c1 as f64))?,
-            Instr::I32ReinterpretF32 => self.run_unop_f32(|c1| Value::I32(c1.to_bits() as i32))?,
-            Instr::I64ReinterpretF64 => self.run_unop_f64(|c1| Value::I64(c1.to_bits() as i64))?,
-            Instr::F32ReinterpretI32 => {
-                self.run_unop_i32_s(|c1| Value::F32(f32::from_bits(c1 as u32)))?
+            Instr::Trunc(int_type, float_type, s) => {
+                match int_type {
+                    IntType::I32 => {
+                        match float_type {
+                            FloatType::F32 => todo!(),
+                            FloatType::F64 => {
+                                match s {
+                                    Signedness::S => self.run_unop_f64(|c1| {
+                                        let c = c1.trunc() as i64;
+                                        assert!(c >= i32::MIN as i64, "I32TruncF64S: value is too low");
+                                        assert!(c <= i32::MAX as i64, "I32TruncF64S: value is too high");
+                                        Value::I32(c as i32)
+                                    })?,
+                                    Signedness::U => todo!(),
+                                }
+                            }
+                        }
+                    }
+                    IntType::I64 => todo!(),
+                }
             }
-            Instr::F64ReinterpretI64 => {
-                self.run_unop_i64_s(|c1| Value::F64(f64::from_bits(c1 as u64)))?
+            Instr::FConvertI(float_type, int_type, s) => {
+                match float_type {
+                    FloatType::F32 => todo!(),
+                    FloatType::F64 => {
+                        match int_type {
+                            IntType::I32 => {
+                                match s {
+                                    Signedness::S => self.run_unop_i32_s(|c1| Value::F64(c1 as f64))?,
+                                    Signedness::U => todo!(),
+                                }
+                            }
+                            IntType::I64 => todo!(),
+                        }
+                    }
+                }
             }
-            Instr::I32x4ExtractLane(x) => {
-                assert!(*x < 4);
+            Instr::IReinterpretF(int_type, float_type) => {
+                match int_type {
+                    IntType::I32 => {
+                        match float_type {
+                            FloatType::F32 => self.run_unop_f32(|c1| Value::I32(c1.to_bits() as i32))?,
+                            FloatType::F64 => todo!(),
+                        }
+                    }
+                    IntType::I64 => {
+                        match float_type {
+                            FloatType::F32 => todo!(),
+                            FloatType::F64 => self.run_unop_f64(|c1| Value::I64(c1.to_bits() as i64))?,
+                        }
+                    }
+                }
+            }
+            Instr::FReinterpretI(float_type, int_type) => {
+                match float_type {
+                    FloatType::F32 => {
+                        match int_type {
+                            IntType::I32 => self.run_unop_i32_s(|c1| Value::F32(f32::from_bits(c1 as u32)))?,
+                            IntType::I64 => todo!(),
+                        }
+                    }
+                    FloatType::F64 => {
+                        match int_type {
+                            IntType::I32 => todo!(),
+                            IntType::I64 => self.run_unop_i64_s(|c1| Value::F64(f64::from_bits(c1 as u64)))?,
+                        }
+                    }
+                }
+            }
+            Instr::I32X4ExtractLane(x) => {
+                assert!(x.0 < 4);
                 let c1 = self.pop()?.as_v128()?;
                 let c1 = c1.to_le_bytes();
 
-                let x = *x as usize;
+                let x = x.0 as usize;
                 let c2 = <[u8; 4]>::try_from(&c1[(x * 4)..(x * 4 + 4)]).unwrap();
                 let c2 = i32::from_le_bytes(c2);
 
                 self.push(Value::I32(c2));
             }
-            Instr::I32x4ReplaceLane(x) => {
-                assert!(*x < 4);
-                let c2 = self.pop()?.as_i32()?;
-                let c1 = self.pop()?.as_v128()?;
+            Instr::IReplaceLane(shape, x) => {
+                match shape {
+                    IShape::I32X4 => {
+                        assert!(x.0 < 4);
+                        let c2 = self.pop()?.as_i32()?;
+                        let c1 = self.pop()?.as_v128()?;
 
-                let x = *x as usize;
-                let mut c = c1.to_le_bytes();
-                c[(x * 4)..(x * 4 + 4)].copy_from_slice(&c2.to_le_bytes());
-                let c = i128::from_le_bytes(c);
+                        let x = x.0 as usize;
+                        let mut c = c1.to_le_bytes();
+                        c[(x * 4)..(x * 4 + 4)].copy_from_slice(&c2.to_le_bytes());
+                        let c = i128::from_le_bytes(c);
 
-                self.push(Value::V128(c));
+                        self.push(Value::V128(c));
+                    }
+                    _ => todo!(),
+                }
             }
-            Instr::I8x16Shuffle(xs) => {
+            Instr::I8X16Shuffle(xs) => {
                 for x in xs {
-                    assert!(*x < 32);
+                    assert!(x.0 < 32);
                 }
                 let c2 = self.pop()?.as_v128()?;
                 let c1 = self.pop()?.as_v128()?;
@@ -574,7 +790,7 @@ impl StackFrame {
 
                 let mut c: [u8; 16] = [0; 16];
                 for i in 0..16 {
-                    let x = xs[i] as usize;
+                    let x = xs[i].0 as usize;
                     if x < 16 {
                         c[i] = c1[x];
                     } else {
@@ -585,30 +801,57 @@ impl StackFrame {
 
                 self.push(Value::V128(c));
             }
-            Instr::I32x4MinU => {
-                self.run_binop_v128_i32x4(|n1, n2| (n1 as u32).min(n2 as u32) as i32)?
-            }
-            Instr::I32x4Add => self.run_binop_v128_i32x4(|n1, n2| n1.wrapping_add(n2))?,
-            Instr::I32x4Sub => self.run_binop_v128_i32x4(|n1, n2| n1.wrapping_sub(n2))?,
-            Instr::I32x4Mul => self.run_binop_v128_i32x4(|n1, n2| n1.wrapping_mul(n2))?,
-            Instr::V128Not => self.run_unop_v128(|c1| Value::V128(!c1))?,
-            Instr::Branch(l_idx) => {
-                return Ok(Some(*l_idx));
-            }
-            Instr::BranchIf(l_idx) => {
-                let c = self.pop()?.as_i32()?;
-                if c != 0 {
-                    return Ok(Some(*l_idx));
+            Instr::VIBinOp(shape, op) => {
+                match shape {
+                    IShape::I32X4 => {
+                        match op {
+                            VIBinOp::Add => self.run_binop_v128_i32x4(|n1, n2| n1.wrapping_add(n2))?,
+                            VIBinOp::Sub => self.run_binop_v128_i32x4(|n1, n2| n1.wrapping_sub(n2))?,
+                        }
+                    }
+                    _ => todo!(),
                 }
             }
-            Instr::BranchTable(labels, default_label) => {
+            Instr::I32X4Mul => self.run_binop_v128_i32x4(|n1, n2| n1.wrapping_mul(n2))?,
+            Instr::I32X4VIRelOp(op) => {
+                match op {
+                    VIRelOp::Eq => todo!(),
+                    _ => todo!(),
+                }
+            }
+            Instr::I32X4VIMinMaxOp(op) => {
+                match op {
+                    VIMinMaxOp::Min(s) => {
+                        match s {
+                            Signedness::S => todo!(),
+                            Signedness::U => self.run_binop_v128_i32x4(|n1, n2| (n1 as u32).min(n2 as u32) as i32)?,
+                        }
+                    }
+                    VIMinMaxOp::Max(_) => todo!(),
+                }
+            }
+            Instr::VVUnOp(op) => {
+                match op {
+                    VVUnOp::Not => self.run_unop_v128(|c1| Value::V128(!c1))?,
+                }
+            }
+            Instr::Br(l_idx) => {
+                return Ok(Some(l_idx.0));
+            }
+            Instr::BrIf(l_idx) => {
+                let c = self.pop()?.as_i32()?;
+                if c != 0 {
+                    return Ok(Some(l_idx.0));
+                }
+            }
+            Instr::BrTable(labels, default_label) => {
                 let case = self.pop()?.as_i32()?;
                 let label = if case < 0 || case as usize >= labels.len() {
                     *default_label
                 } else {
                     labels[case as usize]
                 };
-                return Ok(Some(label));
+                return Ok(Some(label.0));
             }
             Instr::Return => {
                 return Ok(Some(depth));
@@ -616,21 +859,25 @@ impl StackFrame {
             Instr::Drop => {
                 self.pop()?;
             }
-            Instr::Select => {
-                let c = self.pop()?.as_i32()?;
-                let val2 = self.pop()?;
-                let val1 = self.pop()?;
-                if c != 0 {
-                    self.push(val1);
+            Instr::Select(choices) => {
+                if choices.is_empty() {
+                    let c = self.pop()?.as_i32()?;
+                    let val2 = self.pop()?;
+                    let val1 = self.pop()?;
+                    if c != 0 {
+                        self.push(val1);
+                    } else {
+                        self.push(val2);
+                    }
                 } else {
-                    self.push(val2);
+                    todo!()
                 }
             }
             Instr::Block(block_type, instructions) => {
                 let n = match block_type {
-                    BlockType::Void => 0,
-                    BlockType::ValType(t) => unimplemented!("{:?}", t),
-                    BlockType::NewType(t) => unimplemented!("{}", t),
+                    BlockType::Val(None) => 0,
+                    BlockType::Val(Some(t)) => unimplemented!("{:?}", t),
+                    BlockType::Type(t) => unimplemented!("{}", t.0),
                 };
 
                 let frame_size = self.frame.len();
@@ -659,9 +906,9 @@ impl StackFrame {
             }
             Instr::Loop(block_type, instructions) => {
                 let n = match block_type {
-                    BlockType::Void => 0,
-                    BlockType::ValType(t) => unimplemented!("{:?}", t),
-                    BlockType::NewType(t) => unimplemented!("{}", t),
+                    BlockType::Val(None) => 0,
+                    BlockType::Val(Some(t)) => unimplemented!("{:?}", t),
+                    BlockType::Type(t) => unimplemented!("{}", t.0),
                 };
 
                 let frame_size = self.frame.len();
@@ -693,11 +940,11 @@ impl StackFrame {
                 }
             }
             Instr::Call(f_idx) => {
-                if (*f_idx as usize) < context.imports.len() {
+                if (f_idx.0 as usize) < context.imports.len() {
                     let ExternalFunctionBinding {
                         signature: ref t,
                         handler: f,
-                    } = &context.imports[*f_idx as usize];
+                    } = &context.imports[f_idx.0 as usize];
 
                     let num_params = t.params.len();
                     let num_returns = t.returns.len();
@@ -714,23 +961,18 @@ impl StackFrame {
                     }
                     self.push_all(returns);
                 } else {
-                    let f_idx = *f_idx;
-                    let t_idx = context.wasm.get_function_type_idx(f_idx).unwrap();
+                    let f_idx = f_idx.0;
+                    let f = context.wasm.funcs.get(f_idx as usize).unwrap();
                     let func = context
                         .wasm
-                        .get_function_type(t_idx)
-                        .expect("no functions exist");
-                    let (locals, expr) = context
-                        .wasm
-                        .get_code(f_idx - context.imports.len() as u32)
-                        .map(|c| &c.func)
+                        .types.get(f.type_idx.0 as usize - context.wasm.imports.len())
                         .expect("no functions exist");
 
                     let params = self.pop_many(func.params.len())?;
                     let returns = context
                         .run_code(
-                            locals.as_ref(),
-                            &expr.0,
+                            &f.locals,
+                            &f.body,
                             params,
                             func.returns.len(),
                             store,
@@ -747,22 +989,18 @@ impl StackFrame {
                 }
             }
             Instr::CallIndirect(x, _y) => {
-                let tab = &tables[*x as usize];
+                let tab = &tables[x.0 as usize];
 
                 let i = self.pop()?.as_i32()?;
                 match tab.elems[i as usize] {
                     Ref::Func(a) => {
-                        let t_idx = context.wasm.get_function_type_idx(a).unwrap();
-                        let func = context.wasm.get_function_type(t_idx).unwrap();
-                        let (locals, expr) = &context
-                            .wasm
-                            .get_code(a - context.imports.len() as u32)
-                            .map(|c| &c.func)
-                            .unwrap();
+                        let f = context.wasm.funcs.get(a as usize).unwrap();
+                        let t_idx = f.type_idx;
+                        let func = context.wasm.types.get(t_idx.0 as usize - context.wasm.imports.len()).unwrap();
 
                         let params = self.pop_many(func.params.len())?;
                         let returns = context
-                            .run_code(locals, &expr.0, params, func.returns.len(), store)
+                            .run_code(&f.locals, &f.body, params, func.returns.len(), store)
                             .map_err(|e| {
                                 e.wrap(ErrorReason::FailedFunction {
                                     f_idx: a,

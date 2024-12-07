@@ -3,16 +3,19 @@ use super::{
     ValType,
 };
 
+#[derive(Debug, PartialEq, Clone)]
 pub enum Signedness {
     U,
     S,
 }
 
+#[derive(Debug, PartialEq, Clone)]
 pub enum IntType {
     I32,
     I64,
 }
 
+#[derive(Debug, PartialEq, Clone)]
 pub enum FloatType {
     F32,
     F64,
@@ -21,12 +24,14 @@ pub enum FloatType {
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub struct LaneIdx(pub u8);
 
+#[derive(Debug, PartialEq, Clone)]
 pub enum IUnOp {
     Clz,
     Ctz,
     PopCnt,
 }
 
+#[derive(Debug, PartialEq, Clone)]
 pub enum IBinOp {
     Add,
     Sub,
@@ -42,6 +47,7 @@ pub enum IBinOp {
     Rotr,
 }
 
+#[derive(Debug, PartialEq, Clone)]
 pub enum FUnOp {
     Abs,
     Neg,
@@ -52,6 +58,7 @@ pub enum FUnOp {
     Nearest,
 }
 
+#[derive(Debug, PartialEq, Clone)]
 pub enum FBinOp {
     Add,
     Sub,
@@ -62,10 +69,12 @@ pub enum FBinOp {
     CopySign,
 }
 
+#[derive(Debug, PartialEq, Clone)]
 pub enum ITestOp {
     Eqz,
 }
 
+#[derive(Debug, PartialEq, Clone)]
 pub enum IRelOp {
     Eq,
     Ne,
@@ -75,6 +84,7 @@ pub enum IRelOp {
     Ge(Signedness),
 }
 
+#[derive(Debug, PartialEq, Clone)]
 pub enum FRelOp {
     Eq,
     Ne,
@@ -84,6 +94,7 @@ pub enum FRelOp {
     Ge,
 }
 
+#[derive(Debug, PartialEq, Clone)]
 pub enum IShape {
     I8X16,
     I16X8,
@@ -91,20 +102,24 @@ pub enum IShape {
     I64X2,
 }
 
+#[derive(Debug, PartialEq, Clone)]
 pub enum FShape {
     F32X4,
     F64X2,
 }
 
+#[derive(Debug, PartialEq, Clone)]
 pub enum Half {
     Low,
     High,
 }
 
+#[derive(Debug, PartialEq, Clone)]
 pub enum VVUnOp {
     Not,
 }
 
+#[derive(Debug, PartialEq, Clone)]
 pub enum VVBinOp {
     And,
     AndNot,
@@ -112,18 +127,22 @@ pub enum VVBinOp {
     Xor,
 }
 
+#[derive(Debug, PartialEq, Clone)]
 pub enum VVTernOp {
     BitSelect,
 }
 
+#[derive(Debug, PartialEq, Clone)]
 pub enum VVTestOp {
     AnyTrue,
 }
 
+#[derive(Debug, PartialEq, Clone)]
 pub enum VITestOp {
     AllTrue,
 }
 
+#[derive(Debug, PartialEq, Clone)]
 pub enum VIRelOp {
     Eq,
     Ne,
@@ -133,6 +152,7 @@ pub enum VIRelOp {
     Ge(Signedness),
 }
 
+#[derive(Debug, PartialEq, Clone)]
 pub enum VFRelOp {
     Eq,
     Ne,
@@ -142,31 +162,37 @@ pub enum VFRelOp {
     Ge,
 }
 
+#[derive(Debug, PartialEq, Clone)]
 pub enum VIUnOp {
     Abs,
     Neg,
 }
 
+#[derive(Debug, PartialEq, Clone)]
 pub enum VIBinOp {
     Add,
     Sub,
 }
 
+#[derive(Debug, PartialEq, Clone)]
 pub enum VIMinMaxOp {
     Min(Signedness),
     Max(Signedness),
 }
 
+#[derive(Debug, PartialEq, Clone)]
 pub enum VISatBinOp {
     AddSat(Signedness),
     SubSat(Signedness),
 }
 
+#[derive(Debug, PartialEq, Clone)]
 pub enum VIShiftOp {
     Shl,
     Shr(Signedness),
 }
 
+#[derive(Debug, PartialEq, Clone)]
 pub enum VFUnOp {
     Abs,
     Neg,
@@ -177,6 +203,7 @@ pub enum VFUnOp {
     Nearest,
 }
 
+#[derive(Debug, PartialEq, Clone)]
 pub enum VFBinOp {
     Add,
     Sub,
@@ -188,11 +215,13 @@ pub enum VFBinOp {
     PMax,
 }
 
+#[derive(Debug, PartialEq, Clone)]
 pub struct MemArg {
     pub offset: u32,
     pub align: u32,
 }
 
+#[derive(Debug, PartialEq, Clone)]
 pub enum Width {
     W8,
     W16,
@@ -200,11 +229,13 @@ pub enum Width {
     W64,
 }
 
+#[derive(Debug, PartialEq, Clone)]
 pub enum BlockType {
     Type(TypeIdx),
     Val(Option<ValType>),
 }
 
+#[derive(Debug, PartialEq, Clone)]
 pub enum Instr {
     I32Const(u32),
     I64Const(u64),

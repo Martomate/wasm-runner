@@ -34,6 +34,7 @@ pub enum ValType {
     Ref(RefType),
 }
 
+#[derive(Debug, PartialEq, Clone)]
 pub struct Func {
     pub type_idx: TypeIdx,
     pub locals: Vec<ValType>,
