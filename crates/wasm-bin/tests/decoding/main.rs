@@ -1,3 +1,5 @@
+use std::sync::mpsc::channel;
+
 use wasm_bin::{
     decode_bytes,
     run::{Store, Value, WasmInterpreter},
@@ -39,26 +41,28 @@ fn log_example() {
 
     let wasm = decode_bytes(example).unwrap();
 
-    static mut LOGGED_MESSAGES: Vec<Vec<Value>> = Vec::new();
+    let (message_tx, message_rx) = channel::<Vec<Value>>();
 
-    fn console_log(params: &[Value]) -> Vec<Value> {
+    let console_log = move |params: &[Value]| -> Vec<Value> {
         let message = params.to_owned();
-        unsafe { LOGGED_MESSAGES.push(message) };
+        message_tx.send(message).unwrap();
         vec![]
-    }
+    };
 
     let mut store = Store::create(&wasm);
     let mut interpreter = WasmInterpreter::new(wasm);
-    interpreter.bind_external_function("env", "console_log", console_log);
+    interpreter.bind_external_function("env", "console_log", Box::new(console_log));
     let res = interpreter.execute("run", vec![], &mut store).unwrap();
+
+    let logged_messages = message_rx.try_iter().collect::<Vec<_>>();
 
     assert_eq!(res, "");
     assert_eq!(
-        unsafe { LOGGED_MESSAGES.clone() },
+        logged_messages,
         vec![vec![Value::I32(1048576)]]
     ); // this is a pointer into the wasm memory
 
-    let message_ptr = (unsafe { LOGGED_MESSAGES[0][0] }).as_i32().unwrap() as u32;
+    let message_ptr = logged_messages[0][0].as_i32().unwrap() as u32;
     let message =
         String::from_utf8(store.access_memory(0, |m| m.read_c_string(message_ptr).to_owned()))
             .unwrap();

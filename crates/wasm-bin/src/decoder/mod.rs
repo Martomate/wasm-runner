@@ -7,7 +7,6 @@ mod values;
 use error::DecodingError;
 use instr::Expr;
 use section::*;
-use std::iter;
 
 use crate::wasm::{
     self,
@@ -234,7 +233,7 @@ impl WasmModule {
                                 type_idx: wasm::TypeIdx(t_idx),
                                 locals: locals
                                     .into_iter()
-                                    .flat_map(|l| iter::repeat(l.t).take(l.n as usize))
+                                    .flat_map(|l| std::iter::repeat_n(l.t, l.n as usize))
                                     .collect(),
                                 body: body.iter().map(map_instr).collect(),
                             }

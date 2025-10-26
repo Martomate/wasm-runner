@@ -1,5 +1,3 @@
-use std::iter;
-
 use crate::wasm::Limits;
 
 
@@ -73,7 +71,7 @@ impl WasmMemory {
                 return false;
             }
         }
-        self.bytes.extend(iter::repeat(0).take(num_bytes as usize));
+        self.bytes.extend(std::iter::repeat_n(0, num_bytes as usize));
         true
     }
 }

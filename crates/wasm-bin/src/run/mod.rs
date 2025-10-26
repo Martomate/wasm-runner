@@ -1,5 +1,3 @@
-use std::iter;
-
 use crate::wasm::instr::Instr;
 use crate::wasm::DataMode;
 use crate::wasm::ElemMode;
@@ -22,9 +20,11 @@ use stack::*;
 
 pub use stack::Value;
 
+type ExternalFunction = Box<dyn Fn(&[Value]) -> Vec<Value>>;
+
 struct ExternalFunctionBinding {
     signature: FuncType,
-    handler: fn(&[Value]) -> Vec<Value>,
+    handler: ExternalFunction,
 }
 
 struct WasmGlobal {
@@ -65,8 +65,7 @@ impl Store {
         for m in wasm.mems.iter() {
             let limits = m.mem_type.limits.clone();
             memories.push(WasmMemory {
-                bytes: iter::repeat(0)
-                    .take((limits.min() as usize) << 16)
+                bytes: std::iter::repeat_n(0, (limits.min() as usize) << 16)
                     .collect(),
                 limits,
             });
@@ -113,7 +112,7 @@ impl Store {
                     ref t => todo!("{:?}", t),
                 };
                 WasmTable {
-                    elems: iter::repeat(value).take(table.table_type.limits.min() as usize).collect(),
+                    elems: std::iter::repeat_n(value, table.table_type.limits.min() as usize).collect(),
                 }
             })
             .collect();
@@ -163,7 +162,7 @@ impl WasmInterpreter {
         &mut self,
         mod_name: &str,
         name: &str,
-        handler: fn(&[Value]) -> Vec<Value>,
+        handler: ExternalFunction,
     ) {
         let import = self.wasm.imports.iter().find(|im| im.module == mod_name && im.name == name).expect("unknown import");
 

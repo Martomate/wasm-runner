@@ -4,22 +4,22 @@ use cipher::*;
 #[cfg(test)]
 mod tests;
 
-use std::{iter, sync::{LazyLock, Mutex}};
+use std::sync::{LazyLock, Mutex};
 
-static mut ARENA: LazyLock<Mutex<Arena>> = LazyLock::new(|| Mutex::new(Arena::new()));
+static ARENA: LazyLock<Mutex<Arena>> = LazyLock::new(|| Mutex::new(Arena::new()));
 
 pub fn new_array(size: u32) -> *mut u8 {
-    let mut arena = unsafe { ARENA.lock().unwrap() };
+    let mut arena = ARENA.lock().unwrap();
     arena.allocate(size as usize)
 }
 
 pub fn drop_array(ptr: *mut u8) {
-    let mut arena = unsafe { ARENA.lock().unwrap() };
+    let mut arena = ARENA.lock().unwrap();
     arena.deallocate(ptr);
 }
 
 pub fn encrypt_128(data: *mut u8, key: *mut u8) -> *mut u8 {
-    let mut arena = unsafe { ARENA.lock().unwrap() };
+    let mut arena = ARENA.lock().unwrap();
 
     let data = arena.access(data, |a| to_block(a));
     let key = arena.access(key, |a| to_block(a));
@@ -35,7 +35,7 @@ pub fn encrypt_128(data: *mut u8, key: *mut u8) -> *mut u8 {
 }
 
 pub fn decrypt_128(data: *mut u8, key: *mut u8) -> *mut u8 {
-    let mut arena = unsafe { ARENA.lock().unwrap() };
+    let mut arena = ARENA.lock().unwrap();
 
     let data = arena.access(data, |a| to_block(a));
     let key = arena.access(key, |a| to_block(a));
@@ -68,7 +68,7 @@ impl<'a> Arena<'a> {
     }
 
     pub fn allocate(&mut self, size: usize) -> *mut u8 {
-        let bytes = iter::repeat(0).take(size).collect::<Vec<u8>>().leak();
+        let bytes = std::iter::repeat_n(0, size).collect::<Vec<u8>>().leak();
         let ptr = bytes.as_mut_ptr();
         self.arrays.push(bytes);
         ptr
