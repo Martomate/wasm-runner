@@ -1,7 +1,7 @@
 use super::node::{Child, Node};
 
 
-pub fn parse_str(mut s: &str) -> Result<Node, String> {
+pub fn parse_str(mut s: &str) -> Result<Node<'_>, String> {
     s = s.trim_start();
     s = s.strip_prefix('(').ok_or("missing (")?;
     s = s.trim_start();
@@ -18,7 +18,7 @@ pub fn parse_str(mut s: &str) -> Result<Node, String> {
     Ok(node)
 }
 
-fn parse_node(mut s: &str) -> Result<(Node, &str), String> {
+fn parse_node(mut s: &str) -> Result<(Node<'_>, &str), String> {
     let mut items = Vec::new();
     while let Some((child, mut rest)) = parse_item(s)? {
         rest = rest.trim_start();
@@ -35,7 +35,7 @@ fn parse_node(mut s: &str) -> Result<(Node, &str), String> {
     Ok((Node { kind, children: items.into_iter().skip(1).collect() }, s))
 }
 
-fn parse_item(s: &str) -> Result<Option<(Child, &str)>, String> {
+fn parse_item(s: &str) -> Result<Option<(Child<'_>, &str)>, String> {
     if let Some(mut s) = s.strip_prefix('(') {
         s = s.trim_start();
         let (node, rest) = parse_node(s)?;
@@ -59,7 +59,7 @@ fn parse_item(s: &str) -> Result<Option<(Child, &str)>, String> {
     }
 
     let (_, rest) = s.split_at(paren.len());
-    return Ok(Some((Child::Attribute(paren), rest)));
+    Ok(Some((Child::Attribute(paren), rest)))
 }
 
 fn scan_escaped_string(s: &str) -> Result<(&str, &str), String> {
