@@ -1,4 +1,3 @@
-
 pub fn sinh(angle: f64) -> f64 {
     (angle.exp() - (-angle).exp()) * 0.5
 }
