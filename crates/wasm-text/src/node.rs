@@ -3,7 +3,7 @@ use std::fmt::Display;
 #[derive(Debug, PartialEq, Eq)]
 pub struct Node<'s> {
     pub kind: &'s str,
-    pub children: Vec<Child<'s>>
+    pub children: Vec<Child<'s>>,
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -14,7 +14,10 @@ pub enum Child<'s> {
 
 impl<'s> Node<'s> {
     pub fn new(kind: &'s str) -> Node<'s> {
-        Node { kind, children: vec![] }
+        Node {
+            kind,
+            children: vec![],
+        }
     }
 
     pub fn node(mut self, node: Node<'s>) -> Self {
