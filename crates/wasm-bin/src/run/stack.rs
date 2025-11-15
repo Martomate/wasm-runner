@@ -9,8 +9,8 @@ use crate::wasm::instr::{
 };
 
 use super::{
-    error::{ErrorReason, InterpreterError, StackError},
     ExternalFunctionBinding, Ref, Store, WasmInterpreter,
+    error::{ErrorReason, InterpreterError, StackError},
 };
 
 const PAGE_SIZE: u32 = 1 << 16;
@@ -669,6 +669,21 @@ impl StackFrame {
                 },
                 IntType::I64 => todo!(),
             },
+            Instr::TruncSat(int_type, float_type, s) => match int_type {
+                IntType::I32 => match float_type {
+                    FloatType::F32 => todo!(),
+                    FloatType::F64 => match s {
+                        Signedness::S => self.run_unop_f64(|c1| {
+                            let c = (c1.trunc() as i64)
+                                .max(i32::MIN as i64)
+                                .min(i32::MAX as i64);
+                            Value::I32(c as i32)
+                        })?,
+                        Signedness::U => todo!(),
+                    },
+                },
+                IntType::I64 => todo!(),
+            },
             Instr::FConvertI(float_type, int_type, s) => match float_type {
                 FloatType::F32 => todo!(),
                 FloatType::F64 => match int_type {
@@ -967,13 +982,63 @@ impl StackFrame {
                     self.push(Value::I32(-1));
                 }
             }
+            Instr::MemoryFill => {
+                const MEM_IDX: usize = 0;
+
+                let n = self.pop()?;
+                let val = (self.pop()?.as_i32()? & 0xff) as u8;
+                let i = self.pop()?;
+                assert_eq!(i.type_name(), n.type_name());
+
+                match (i, n) {
+                    (Value::I32(i), Value::I32(n)) => {
+                        assert!((i + n) as u32 <= memories[MEM_IDX].size());
+                        for ptr in (i as u32)..(i + n) as u32 {
+                            memories[MEM_IDX].write_byte(ptr, val);
+                        }
+                    }
+                    _ => todo!(),
+                };
+            }
+            Instr::MemoryCopy => {
+                const DST_MEM_IDX: usize = 0;
+                const SRC_MEM_IDX: usize = 0;
+
+                let n = self.pop()?;
+                let i2 = self.pop()?;
+                let i1 = self.pop()?;
+
+                match (i1, i2, n) {
+                    (Value::I32(i1), Value::I32(i2), Value::I32(n)) => {
+                        let i1 = i1 as u32;
+                        let i2 = i2 as u32;
+                        let n = n as u32;
+
+                        assert!(i1 + n <= memories[DST_MEM_IDX].size());
+                        assert!(i2 + n <= memories[SRC_MEM_IDX].size());
+
+                        if i1 <= i2 {
+                            for di in 0..n {
+                                let val = memories[SRC_MEM_IDX].read_byte(i2 + di);
+                                memories[DST_MEM_IDX].write_byte(i1 + di, val);
+                            }
+                        } else {
+                            for di in (0..n).rev() {
+                                let val = memories[SRC_MEM_IDX].read_byte(i2 + di);
+                                memories[DST_MEM_IDX].write_byte(i1 + di, val);
+                            }
+                        }
+                    }
+                    _ => todo!(),
+                };
+            }
             Instr::Unreachable => {
                 panic!("entered unreachable code");
             }
             op => {
                 return Err(InterpreterError::new(ErrorReason::UnsupportedInstruction {
                     instr: op.clone(),
-                }))
+                }));
             }
         }
         Ok(None)
