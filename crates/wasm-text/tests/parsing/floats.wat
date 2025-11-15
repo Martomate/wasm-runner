@@ -1,4 +1,4 @@
-(module $floats-3aaf96b80dc7af10.wasm
+(module $floats-70ca8ab2c5db12fb.wasm
   (table $table0 1 1 funcref)
   (memory $memory (;0;) (export "memory") 17)
   (global $__stack_pointer (;0;) (mut i32) (i32.const 1048576))
@@ -24,7 +24,7 @@
     f64.const 0.5
     f64.mul
   )
-  (func $_ZN17compiler_builtins4math4libm3exp3exp17h8fb65da6e651c2d1E (;3;) (param $var0 f64) (result f64)
+  (func $_ZN17compiler_builtins4math9libm_math3exp3exp17he94c3459fed52970E (;3;) (param $var0 f64) (result f64)
     (local $var1 i32)
     (local $var2 i64)
     (local $var3 i32)
@@ -45,7 +45,7 @@
     local.set $var3
     block $label4
       block $label7
-        block $label11
+        block $label9
           block $label8
             block $label6
               block $label2
@@ -124,46 +124,11 @@
                 local.get $var3
                 i32.const 3
                 i32.shl
-                i32.const 1048576
-                i32.add
-                f64.load
+                f64.load offset=1048576
                 f64.add
-                local.tee $var5
-                f64.const -2147483648
-                f64.ge
+                i32.trunc_sat_f64_s
                 local.set $var4
-                block $label10
-                  block $label9
-                    local.get $var5
-                    f64.abs
-                    f64.const 2147483648
-                    f64.lt
-                    i32.eqz
-                    br_if $label9
-                    local.get $var5
-                    i32.trunc_f64_s
-                    local.set $var3
-                    br $label10
-                  end $label9
-                  i32.const -2147483648
-                  local.set $var3
-                end $label10
-                i32.const 0
-                i32.const 2147483647
-                local.get $var3
-                i32.const -2147483648
-                local.get $var4
-                select
-                local.get $var5
-                f64.const 2147483647
-                f64.gt
-                select
-                local.get $var5
-                local.get $var5
-                f64.ne
-                select
-                local.set $var4
-                br $label11
+                br $label9
               end $label2
               local.get $var0
               f64.const 8.98846567431158e+307
@@ -189,7 +154,7 @@
           local.get $var3
           i32.sub
           local.set $var4
-        end $label11
+        end $label9
         local.get $var0
         local.get $var4
         f64.convert_i32_s
@@ -246,18 +211,18 @@
       local.get $var4
       i32.eqz
       br_if $label4
-      block $label13
-        block $label15
-          block $label14
-            block $label12
+      block $label11
+        block $label13
+          block $label12
+            block $label10
               local.get $var4
               i32.const 1023
               i32.gt_s
-              br_if $label12
+              br_if $label10
               local.get $var4
               i32.const -1022
               i32.ge_s
-              br_if $label13
+              br_if $label11
               local.get $var5
               f64.const 2.004168360008973e-292
               f64.mul
@@ -265,13 +230,13 @@
               local.get $var4
               i32.const -1992
               i32.le_u
-              br_if $label14
+              br_if $label12
               local.get $var4
               i32.const 969
               i32.add
               local.set $var4
-              br $label13
-            end $label12
+              br $label11
+            end $label10
             local.get $var5
             f64.const 8.98846567431158e+307
             f64.mul
@@ -279,13 +244,13 @@
             local.get $var4
             i32.const 2046
             i32.gt_u
-            br_if $label15
+            br_if $label13
             local.get $var4
             i32.const -1023
             i32.add
             local.set $var4
-            br $label13
-          end $label14
+            br $label11
+          end $label12
           local.get $var5
           f64.const 2.004168360008973e-292
           f64.mul
@@ -294,13 +259,13 @@
           i32.const -2960
           local.get $var4
           i32.const -2960
-          i32.gt_s
+          i32.gt_u
           select
           i32.const 1938
           i32.add
           local.set $var4
-          br $label13
-        end $label15
+          br $label11
+        end $label13
         local.get $var5
         f64.const 8.98846567431158e+307
         f64.mul
@@ -309,12 +274,12 @@
         i32.const 3069
         local.get $var4
         i32.const 3069
-        i32.lt_s
+        i32.lt_u
         select
         i32.const -2046
         i32.add
         local.set $var4
-      end $label13
+      end $label11
       local.get $var5
       local.get $var4
       i32.const 1023
@@ -328,13 +293,9 @@
     end $label4
     local.get $var5
   )
-  (func $_ZN17compiler_builtins4math3exp17h795d08a6d3d16c1fE (;4;) (param $var0 f64) (result f64)
+  (func $exp (;4;) (param $var0 f64) (result f64)
     local.get $var0
-    call $_ZN17compiler_builtins4math4libm3exp3exp17h8fb65da6e651c2d1E
-  )
-  (func $exp (;5;) (param $var0 f64) (result f64)
-    local.get $var0
-    call $_ZN17compiler_builtins4math3exp17h795d08a6d3d16c1fE
+    call $_ZN17compiler_builtins4math9libm_math3exp3exp17he94c3459fed52970E
   )
   (data (i32.const 1048576) "\00\00\00\00\00\00\e0?\00\00\00\00\00\00\e0\bf")
 )

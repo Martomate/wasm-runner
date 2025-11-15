@@ -1,4 +1,4 @@
-(module $program_log.wasm
+(module $log-9826d33c07873659.wasm
   (func $console_log (;0;) (import "env" "console_log") (param i32))
   (table $table0 1 1 funcref)
   (memory $memory (;0;) (export "memory") 17)

@@ -8,7 +8,7 @@ fn parse_add_example() {
 
     let expected = {
         Node::new("module")
-            .attr("$program_add.wasm")
+            .attr("$add-1ccbdf40c7165e13.wasm")
             .node(
                 Node::new("table")
                     .attr("$table0")

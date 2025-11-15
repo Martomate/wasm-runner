@@ -1,4 +1,4 @@
-(module $program_add.wasm
+(module $add-1ccbdf40c7165e13.wasm
   (table $table0 1 1 funcref)
   (memory $memory (;0;) (export "memory") 16)
   (global $__stack_pointer (;0;) (mut i32) (i32.const 1048576))
