@@ -60,11 +60,11 @@ fn parse_item(s: &str) -> Result<Option<(Child<'_>, &str)>, String> {
     if paren.is_empty() {
         return Ok(None);
     }
-    if let Some(space) = s.split_ascii_whitespace().next() {
-        if space.len() < paren.len() {
-            let (_, rest) = s.split_at(space.len());
-            return Ok(Some((Child::Attribute(space), rest)));
-        }
+    if let Some(space) = s.split_ascii_whitespace().next()
+        && space.len() < paren.len()
+    {
+        let (_, rest) = s.split_at(space.len());
+        return Ok(Some((Child::Attribute(space), rest)));
     }
 
     let (_, rest) = s.split_at(paren.len());
