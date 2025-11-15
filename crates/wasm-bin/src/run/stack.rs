@@ -883,7 +883,7 @@ impl StackFrame {
             Instr::Call(f_idx) => {
                 if (f_idx.0 as usize) < context.imports.len() {
                     let ExternalFunctionBinding {
-                        signature: ref t,
+                        signature: t,
                         handler: f,
                     } = &context.imports[f_idx.0 as usize];
 

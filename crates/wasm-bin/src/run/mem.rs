@@ -71,10 +71,10 @@ impl WasmMemory {
     }
 
     pub fn try_grow(&mut self, num_bytes: u32) -> bool {
-        if let Some(max) = self.limits.max() {
-            if self.size() + num_bytes > max << 16 {
-                return false;
-            }
+        if let Some(max) = self.limits.max()
+            && self.size() + num_bytes > max << 16
+        {
+            return false;
         }
         self.bytes
             .extend(std::iter::repeat_n(0, num_bytes as usize));
