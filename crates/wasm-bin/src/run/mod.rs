@@ -65,8 +65,7 @@ impl Store {
         for m in wasm.mems.iter() {
             let limits = m.mem_type.limits.clone();
             memories.push(WasmMemory {
-                bytes: std::iter::repeat_n(0, (limits.min() as usize) << 16)
-                    .collect(),
+                bytes: std::iter::repeat_n(0, (limits.min() as usize) << 16).collect(),
                 limits,
             });
         }
@@ -104,7 +103,8 @@ impl Store {
             })
             .collect();
 
-        let mut tables: Vec<WasmTable> = wasm.tables
+        let mut tables: Vec<WasmTable> = wasm
+            .tables
             .iter()
             .map(|table| {
                 let value: Ref = match table.table_type.ref_type {
@@ -112,7 +112,8 @@ impl Store {
                     ref t => todo!("{:?}", t),
                 };
                 WasmTable {
-                    elems: std::iter::repeat_n(value, table.table_type.limits.min() as usize).collect(),
+                    elems: std::iter::repeat_n(value, table.table_type.limits.min() as usize)
+                        .collect(),
                 }
             })
             .collect();
@@ -164,7 +165,12 @@ impl WasmInterpreter {
         name: &str,
         handler: ExternalFunction,
     ) {
-        let import = self.wasm.imports.iter().find(|im| im.module == mod_name && im.name == name).expect("unknown import");
+        let import = self
+            .wasm
+            .imports
+            .iter()
+            .find(|im| im.module == mod_name && im.name == name)
+            .expect("unknown import");
 
         let f = match import.desc {
             ImportDesc::Func(t_idx) => self.wasm.types.get(t_idx.0 as usize).unwrap(),
@@ -185,22 +191,22 @@ impl WasmInterpreter {
     ) -> Result<String, String> {
         let export = self
             .wasm
-            .exports.iter().find(|e| e.name == function_name)
+            .exports
+            .iter()
+            .find(|e| e.name == function_name)
             .ok_or("unknown function")?;
         let ExportDesc::Func(ref function_idx) = export.desc else {
             panic!("not a function");
         };
         let exported_function_idx = function_idx.0 - self.wasm.imports.len() as u32;
 
-        let exported_function = self
-            .wasm
-            .funcs.get(exported_function_idx as usize)
-            .unwrap();
+        let exported_function = self.wasm.funcs.get(exported_function_idx as usize).unwrap();
         let exported_function_type_idx = exported_function.type_idx;
 
         let function = self
             .wasm
-            .types.get(exported_function_type_idx.0 as usize)
+            .types
+            .get(exported_function_type_idx.0 as usize)
             .unwrap();
 
         let param_types = function.params.clone();
@@ -229,7 +235,13 @@ impl WasmInterpreter {
         let return_types = function.returns.clone();
 
         let res = self
-            .run_code(&exported_function.locals, &exported_function.body, param_values, return_types.len(), store)
+            .run_code(
+                &exported_function.locals,
+                &exported_function.body,
+                param_values,
+                return_types.len(),
+                store,
+            )
             .map_err(|e| {
                 e.wrap(ErrorReason::FailedFunction {
                     f_idx: function_idx.0,
@@ -258,22 +270,18 @@ impl WasmInterpreter {
     ) -> Result<Vec<Value>, InterpreterError> {
         let mut frame = StackFrame::new();
         frame.push_all(parameters);
-        frame.push_all(
-            locals
-                .iter()
-                .map(|t| match t {
-                    ValType::Num(t) => match t {
-                        NumType::I32 => Value::I32(0),
-                        NumType::I64 => Value::I64(0),
-                        NumType::F32 => Value::F32(0.0),
-                        NumType::F64 => Value::F64(0.0),
-                    },
-                    ValType::Vec(t) => match t {
-                        VecType::V128 => Value::V128(0),
-                    },
-                    t => todo!("{:?}", t),
-                }),
-        );
+        frame.push_all(locals.iter().map(|t| match t {
+            ValType::Num(t) => match t {
+                NumType::I32 => Value::I32(0),
+                NumType::I64 => Value::I64(0),
+                NumType::F32 => Value::F32(0.0),
+                NumType::F64 => Value::F64(0.0),
+            },
+            ValType::Vec(t) => match t {
+                VecType::V128 => Value::V128(0),
+            },
+            t => todo!("{:?}", t),
+        }));
 
         for (i, op) in body.iter().enumerate() {
             if let Some(l_idx) = frame.run_instruction(op, self, store, 0).map_err(|e| {

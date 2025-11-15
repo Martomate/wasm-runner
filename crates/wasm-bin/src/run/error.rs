@@ -58,7 +58,9 @@ impl Display for ErrorReason {
                 }
                 Ok(())
             }
-            ErrorReason::UnsupportedInstruction { instr } => write!(f, "unsupported instruction: {:?}", instr),
+            ErrorReason::UnsupportedInstruction { instr } => {
+                write!(f, "unsupported instruction: {:?}", instr)
+            }
         }
     }
 }

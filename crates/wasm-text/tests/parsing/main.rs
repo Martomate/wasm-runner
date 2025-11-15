@@ -65,7 +65,6 @@ fn parse_add_example() {
     assert_eq!(actual, expected);
 }
 
-
 #[test]
 fn parse_box_example() {
     let input = include_str!("box.wat");

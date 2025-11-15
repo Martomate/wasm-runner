@@ -8,7 +8,10 @@ pub struct DecodingError {
 
 impl DecodingError {
     pub fn wrap(self, msg: impl Into<String>) -> Self {
-        Self { msg: msg.into(), cause: Some(Box::new(self)) }
+        Self {
+            msg: msg.into(),
+            cause: Some(Box::new(self)),
+        }
     }
 }
 
@@ -24,13 +27,19 @@ impl<T> DecodingErrorExt for Result<T, DecodingError> {
 
 impl From<String> for DecodingError {
     fn from(value: String) -> Self {
-        Self { msg: value, cause: None }
+        Self {
+            msg: value,
+            cause: None,
+        }
     }
 }
 
 impl From<&str> for DecodingError {
     fn from(value: &str) -> Self {
-        Self { msg: value.into(), cause: None }
+        Self {
+            msg: value.into(),
+            cause: None,
+        }
     }
 }
 

@@ -1,6 +1,5 @@
 use super::{
-    DataIdx, ElemIdx, FuncIdx, GlobalIdx, LabelIdx, LocalIdx, RefType, TableIdx, TypeIdx,
-    ValType,
+    DataIdx, ElemIdx, FuncIdx, GlobalIdx, LabelIdx, LocalIdx, RefType, TableIdx, TypeIdx, ValType,
 };
 
 #[derive(Debug, PartialEq, Clone)]

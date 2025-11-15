@@ -1,6 +1,5 @@
 use crate::wasm::Limits;
 
-
 pub struct WasmMemory {
     pub bytes: Vec<u8>,
     pub limits: Limits,
@@ -29,7 +28,13 @@ impl WasmMemory {
         if (ptr as usize + N) <= self.bytes.len() {
             self.bytes[ptr as usize..][..N].copy_from_slice(&v);
         } else {
-            panic!("memory write out of bounds, max: {}, ptr: {}, N: {}, limits: {:?}", self.bytes.len(), ptr, N, self.limits);
+            panic!(
+                "memory write out of bounds, max: {}, ptr: {}, N: {}, limits: {:?}",
+                self.bytes.len(),
+                ptr,
+                N,
+                self.limits
+            );
         }
     }
 
@@ -71,7 +76,8 @@ impl WasmMemory {
                 return false;
             }
         }
-        self.bytes.extend(std::iter::repeat_n(0, num_bytes as usize));
+        self.bytes
+            .extend(std::iter::repeat_n(0, num_bytes as usize));
         true
     }
 }

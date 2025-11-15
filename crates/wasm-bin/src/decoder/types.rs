@@ -1,6 +1,9 @@
-use crate::wasm::{FuncType, GlobalType, Limits, MemType, NumType, RefType, ResultType, TableType, ValType, VecType};
+use crate::wasm::{
+    FuncType, GlobalType, Limits, MemType, NumType, RefType, ResultType, TableType, ValType,
+    VecType,
+};
 
-use super::{WasmDecoder, error::DecodingError};
+use super::{error::DecodingError, WasmDecoder};
 
 impl<'a> WasmDecoder<'a> {
     pub fn read_functype(&mut self) -> Result<FuncType, DecodingError> {
@@ -81,9 +84,6 @@ impl<'a> WasmDecoder<'a> {
             0x01 => true,
             b => Err(format!("invalid mut byte in globaltype: {}", b))?,
         };
-        Ok(GlobalType {
-            val_type,
-            mutable,
-        })
+        Ok(GlobalType { val_type, mutable })
     }
 }

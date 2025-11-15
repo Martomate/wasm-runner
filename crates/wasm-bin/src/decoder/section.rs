@@ -1,8 +1,11 @@
-use crate::wasm::{ExportDesc, FuncIdx, FuncType, GlobalIdx, GlobalType, ImportDesc, MemIdx, MemType, RefType, TableIdx, TableType, TypeIdx, ValType};
+use crate::wasm::{
+    ExportDesc, FuncIdx, FuncType, GlobalIdx, GlobalType, ImportDesc, MemIdx, MemType, RefType,
+    TableIdx, TableType, TypeIdx, ValType,
+};
 
-use super::WasmDecoder;
 use super::error::{DecodingError, DecodingErrorExt};
 use super::instr::Expr;
+use super::WasmDecoder;
 
 #[derive(Debug, PartialEq, Eq, Clone)]
 pub struct ImportType {
@@ -453,7 +456,9 @@ pub struct TypeSection {
 impl SectionDecoder for TypeSection {
     fn decode_section(bytes: &mut WasmDecoder) -> Result<Self, DecodingError> {
         Ok(Self {
-            functions: bytes.read_vec(|bytes| bytes.read_functype()).context("decoding type section")?,
+            functions: bytes
+                .read_vec(|bytes| bytes.read_functype())
+                .context("decoding type section")?,
         })
     }
 }
@@ -466,7 +471,9 @@ pub struct ImportSection {
 impl SectionDecoder for ImportSection {
     fn decode_section(bytes: &mut WasmDecoder) -> Result<Self, DecodingError> {
         Ok(Self {
-            imports: bytes.read_vec(|bytes| bytes.read_import()).context("decoding import section")?,
+            imports: bytes
+                .read_vec(|bytes| bytes.read_import())
+                .context("decoding import section")?,
         })
     }
 }
@@ -479,7 +486,9 @@ pub struct FunctionSection {
 impl SectionDecoder for FunctionSection {
     fn decode_section(bytes: &mut WasmDecoder) -> Result<Self, DecodingError> {
         Ok(Self {
-            type_ids: bytes.read_vec(|bytes| Ok(bytes.read_u32())).context("decoding function section")?,
+            type_ids: bytes
+                .read_vec(|bytes| Ok(bytes.read_u32()))
+                .context("decoding function section")?,
         })
     }
 }
@@ -492,7 +501,9 @@ pub struct TableSection {
 impl SectionDecoder for TableSection {
     fn decode_section(bytes: &mut WasmDecoder) -> Result<Self, DecodingError> {
         Ok(Self {
-            tables: bytes.read_vec(|bytes| bytes.read_tabletype()).context("decoding table section")?,
+            tables: bytes
+                .read_vec(|bytes| bytes.read_tabletype())
+                .context("decoding table section")?,
         })
     }
 }
@@ -505,7 +516,9 @@ pub struct MemorySection {
 impl SectionDecoder for MemorySection {
     fn decode_section(bytes: &mut WasmDecoder) -> Result<Self, DecodingError> {
         Ok(Self {
-            memories: bytes.read_vec(|bytes| bytes.read_memtype()).context("decoding memory section")?,
+            memories: bytes
+                .read_vec(|bytes| bytes.read_memtype())
+                .context("decoding memory section")?,
         })
     }
 }
@@ -518,11 +531,13 @@ pub struct GlobalSection {
 impl SectionDecoder for GlobalSection {
     fn decode_section(bytes: &mut WasmDecoder) -> Result<Self, DecodingError> {
         Ok(Self {
-            globals: bytes.read_vec(|bytes| {
-                let global_type = bytes.read_globaltype()?;
-                let expr = bytes.read_expr()?;
-                Ok((global_type, expr))
-            }).context("decoding global section")?,
+            globals: bytes
+                .read_vec(|bytes| {
+                    let global_type = bytes.read_globaltype()?;
+                    let expr = bytes.read_expr()?;
+                    Ok((global_type, expr))
+                })
+                .context("decoding global section")?,
         })
     }
 }
@@ -535,7 +550,9 @@ pub struct ExportSection {
 impl SectionDecoder for ExportSection {
     fn decode_section(bytes: &mut WasmDecoder) -> Result<Self, DecodingError> {
         Ok(Self {
-            exports: bytes.read_vec(|bytes| bytes.read_export()).context("decoding export section")?,
+            exports: bytes
+                .read_vec(|bytes| bytes.read_export())
+                .context("decoding export section")?,
         })
     }
 }
@@ -561,7 +578,9 @@ pub struct ElementSection {
 impl SectionDecoder for ElementSection {
     fn decode_section(bytes: &mut WasmDecoder) -> Result<Self, DecodingError> {
         Ok(Self {
-            elements: bytes.read_vec(|bytes| bytes.read_element()).context("decoding element section")?,
+            elements: bytes
+                .read_vec(|bytes| bytes.read_element())
+                .context("decoding element section")?,
         })
     }
 }
@@ -574,7 +593,9 @@ pub struct CodeSection {
 impl SectionDecoder for CodeSection {
     fn decode_section(bytes: &mut WasmDecoder) -> Result<Self, DecodingError> {
         Ok(Self {
-            codes: bytes.read_vec(|bytes| bytes.read_code()).context("decoding code section")?,
+            codes: bytes
+                .read_vec(|bytes| bytes.read_code())
+                .context("decoding code section")?,
         })
     }
 }
@@ -587,7 +608,9 @@ pub struct DataSection {
 impl SectionDecoder for DataSection {
     fn decode_section(bytes: &mut WasmDecoder) -> Result<Self, DecodingError> {
         Ok(Self {
-            datas: bytes.read_vec(|bytes| bytes.read_data()).context("decoding data section")?,
+            datas: bytes
+                .read_vec(|bytes| bytes.read_data())
+                .context("decoding data section")?,
         })
     }
 }

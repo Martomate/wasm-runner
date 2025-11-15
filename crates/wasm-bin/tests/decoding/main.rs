@@ -57,10 +57,7 @@ fn log_example() {
     let logged_messages = message_rx.try_iter().collect::<Vec<_>>();
 
     assert_eq!(res, "");
-    assert_eq!(
-        logged_messages,
-        vec![vec![Value::I32(1048576)]]
-    ); // this is a pointer into the wasm memory
+    assert_eq!(logged_messages, vec![vec![Value::I32(1048576)]]); // this is a pointer into the wasm memory
 
     let message_ptr = logged_messages[0][0].as_i32().unwrap() as u32;
     let message =
@@ -141,17 +138,17 @@ fn floats_example() {
     let wasm = decode_bytes(example).unwrap();
     let mut store = Store::create(&wasm);
     let mut program = WasmInterpreter::new(wasm);
-/*
-    let res = program
-        .execute("add_f32", vec!["17.123", "65.472"], &mut store)
-        .unwrap();
-    assert_eq!(res, "82.595");
+    /*
+        let res = program
+            .execute("add_f32", vec!["17.123", "65.472"], &mut store)
+            .unwrap();
+        assert_eq!(res, "82.595");
 
-    let res = program
-        .execute("add_f64", vec!["17.123", "65.472"], &mut store)
-        .unwrap();
-    assert_eq!(res, "82.595");
-*/
+        let res = program
+            .execute("add_f64", vec!["17.123", "65.472"], &mut store)
+            .unwrap();
+        assert_eq!(res, "82.595");
+    */
     let res = program.execute("sinh", vec!["1.23"], &mut store).unwrap();
     assert_eq!(res, "1.564468479304407");
 }
